@@ -6,6 +6,13 @@ using UnityEngine;
 
 public class HandTrackingUdpSender_Debuggable : MonoBehaviour
 {
+    public enum CoordinateSpaceMode
+    {
+        World,
+        LocalToReference,
+        HandLocal
+    }
+
     [Header("Hand Tracking Objects")]
     public GameObject leftHandObject;
     public GameObject rightHandObject;
@@ -14,6 +21,10 @@ public class HandTrackingUdpSender_Debuggable : MonoBehaviour
     public string targetIp = "192.168.1.10";
     public int targetPort = 5055;
     public float sendRate = 30f;
+
+    [Header("Coordinate Space")]
+    public CoordinateSpaceMode coordinateSpace = CoordinateSpaceMode.World;
+    public Transform coordinateSpaceReference;
 
     [Header("Debug - Tick These In Immersive Debugger")]
     public bool udpReady;
@@ -29,6 +40,11 @@ public class HandTrackingUdpSender_Debuggable : MonoBehaviour
     public string lastStatus = "Not started";
     public string lastPacketPreview = "";
 
+    [Header("Continuous Debug Log")]
+    public bool logContinuously = true;
+    public float debugLogRate = 1f;
+    public bool logPacketPreview = true;
+
     private OVRHand leftHand;
     private OVRHand rightHand;
     private OVRSkeleton leftSkeleton;
@@ -36,11 +52,14 @@ public class HandTrackingUdpSender_Debuggable : MonoBehaviour
     private UdpClient udp;
     private IPEndPoint endpoint;
     private float nextSendTime;
+    private float nextDebugLogTime;
 
     [Serializable]
     private class Packet
     {
         public string type = "hand_tracking";
+        public string coordinateSpace;
+        public string coordinateReference;
         public float time;
         public HandData left;
         public HandData right;
@@ -99,10 +118,12 @@ public class HandTrackingUdpSender_Debuggable : MonoBehaviour
     private void OnEnable()
     {
         OpenUdp();
+        LogDebugSnapshot("enabled");
     }
 
     private void OnDisable()
     {
+        LogDebugSnapshot("disabled");
         CloseUdp();
     }
 
@@ -110,6 +131,7 @@ public class HandTrackingUdpSender_Debuggable : MonoBehaviour
     {
         CacheHandComponents();
         UpdateDebugFields();
+        LogDebugSnapshotThrottled();
 
         if (!udpReady || Time.time < nextSendTime)
         {
@@ -124,11 +146,13 @@ public class HandTrackingUdpSender_Debuggable : MonoBehaviour
     {
         CloseUdp();
         OpenUdp();
+        LogDebugSnapshot("reconnect");
     }
 
     public void SendTestPacket()
     {
         SendCurrentPacket();
+        LogDebugSnapshot("test packet");
     }
 
     private void CacheHandComponents()
@@ -154,11 +178,13 @@ public class HandTrackingUdpSender_Debuggable : MonoBehaviour
             udp = new UdpClient();
             udpReady = true;
             lastStatus = "UDP ready";
+            Debug.Log($"[HandTrackingUdpSender] UDP ready -> {targetIp}:{targetPort}", this);
         }
         catch (Exception e)
         {
             udpReady = false;
             lastStatus = "UDP error: " + e.Message;
+            Debug.LogError($"[HandTrackingUdpSender] UDP open failed -> {e.Message}", this);
         }
     }
 
@@ -167,6 +193,7 @@ public class HandTrackingUdpSender_Debuggable : MonoBehaviour
         udpReady = false;
         udp?.Close();
         udp = null;
+        lastStatus = "UDP closed";
     }
 
     private void UpdateDebugFields()
@@ -174,10 +201,18 @@ public class HandTrackingUdpSender_Debuggable : MonoBehaviour
         leftTracked = leftHand != null && leftHand.IsTracked;
         rightTracked = rightHand != null && rightHand.IsTracked;
 
-        leftWristPosition = GetWristPosition(leftSkeleton);
-        rightWristPosition = GetWristPosition(rightSkeleton);
-        leftIndexTipPosition = GetBonePosition(leftSkeleton, OVRSkeleton.BoneId.Hand_IndexTip, leftWristPosition);
-        rightIndexTipPosition = GetBonePosition(rightSkeleton, OVRSkeleton.BoneId.Hand_IndexTip, rightWristPosition);
+        Vector3 leftWristWorld = GetWristPosition(leftSkeleton);
+        Vector3 rightWristWorld = GetWristPosition(rightSkeleton);
+        Vector3 leftIndexTipWorld = GetBonePosition(leftSkeleton, OVRSkeleton.BoneId.Hand_IndexTip, leftWristWorld);
+        Vector3 rightIndexTipWorld = GetBonePosition(rightSkeleton, OVRSkeleton.BoneId.Hand_IndexTip, rightWristWorld);
+
+        Quaternion leftWristRotation = GetWristRotation(leftSkeleton);
+        Quaternion rightWristRotation = GetWristRotation(rightSkeleton);
+
+        leftWristPosition = ToOutputPosition(leftWristWorld, leftWristWorld, leftWristRotation);
+        rightWristPosition = ToOutputPosition(rightWristWorld, rightWristWorld, rightWristRotation);
+        leftIndexTipPosition = ToOutputPosition(leftIndexTipWorld, leftWristWorld, leftWristRotation);
+        rightIndexTipPosition = ToOutputPosition(rightIndexTipWorld, rightWristWorld, rightWristRotation);
 
         leftIndexPinch = leftHand != null ? leftHand.GetFingerPinchStrength(OVRHand.HandFinger.Index) : 0f;
         rightIndexPinch = rightHand != null ? rightHand.GetFingerPinchStrength(OVRHand.HandFinger.Index) : 0f;
@@ -196,6 +231,8 @@ public class HandTrackingUdpSender_Debuggable : MonoBehaviour
         {
             var packet = new Packet
             {
+                coordinateSpace = GetCoordinateSpaceLabel(),
+                coordinateReference = GetCoordinateReferenceLabel(),
                 time = Time.time,
                 left = BuildHandData(leftHand, leftSkeleton),
                 right = BuildHandData(rightHand, rightSkeleton)
@@ -213,7 +250,114 @@ public class HandTrackingUdpSender_Debuggable : MonoBehaviour
         {
             udpReady = false;
             lastStatus = "Send error: " + e.Message;
+            Debug.LogError($"[HandTrackingUdpSender] UDP send failed -> {e.Message}", this);
         }
+    }
+
+    private void LogDebugSnapshotThrottled()
+    {
+        if (!logContinuously || Time.time < nextDebugLogTime)
+        {
+            return;
+        }
+
+        nextDebugLogTime = Time.time + (1f / Mathf.Max(0.1f, debugLogRate));
+        LogDebugSnapshot("tick");
+    }
+
+    private void LogDebugSnapshot(string reason)
+    {
+        string leftState = BuildHandDebugText("L", leftHandObject, leftHand, leftSkeleton, leftTracked, leftWristPosition, leftIndexTipPosition, leftIndexPinch);
+        string rightState = BuildHandDebugText("R", rightHandObject, rightHand, rightSkeleton, rightTracked, rightWristPosition, rightIndexTipPosition, rightIndexPinch);
+        string packetPreview = logPacketPreview && !string.IsNullOrEmpty(lastPacketPreview)
+            ? "\npacket=" + lastPacketPreview
+            : "";
+
+        Debug.Log(
+            $"[HandTrackingUdpSender] {reason} | space={GetCoordinateSpaceLabel()} ref={GetCoordinateReferenceLabel()} udp={udpReady} target={targetIp}:{targetPort} packets={packetsSent} status=\"{lastStatus}\"\n{leftState}\n{rightState}{packetPreview}",
+            this);
+    }
+
+    private string BuildHandDebugText(
+        string label,
+        GameObject handObject,
+        OVRHand hand,
+        OVRSkeleton skeleton,
+        bool tracked,
+        Vector3 wristPosition,
+        Vector3 indexTipPosition,
+        float indexPinch)
+    {
+        string objectName = handObject != null ? handObject.name : "null";
+        string handReady = hand != null ? "ok" : "missing";
+        string skeletonReady = skeleton != null ? $"ok bones={skeleton.Bones?.Count ?? 0}" : "missing";
+
+        return $"{label} object={objectName} hand={handReady} skeleton={skeletonReady} tracked={tracked} wrist={FormatVector(wristPosition)} indexTip={FormatVector(indexTipPosition)} pinch={indexPinch:0.000}";
+    }
+
+    private string FormatVector(Vector3 value)
+    {
+        return $"({value.x:0.000}, {value.y:0.000}, {value.z:0.000})";
+    }
+
+    private string GetCoordinateSpaceLabel()
+    {
+        if (coordinateSpace == CoordinateSpaceMode.HandLocal)
+        {
+            return "hand_local";
+        }
+
+        if (coordinateSpace == CoordinateSpaceMode.LocalToReference && coordinateSpaceReference != null)
+        {
+            return "local_to_reference";
+        }
+
+        return "world";
+    }
+
+    private string GetCoordinateReferenceLabel()
+    {
+        if (coordinateSpace == CoordinateSpaceMode.HandLocal)
+        {
+            return "Hand_WristRoot";
+        }
+
+        if (coordinateSpace == CoordinateSpaceMode.LocalToReference && coordinateSpaceReference != null)
+        {
+            return coordinateSpaceReference.name;
+        }
+
+        return "none";
+    }
+
+    private Vector3 ToOutputPosition(Vector3 worldPosition)
+    {
+        if (coordinateSpace == CoordinateSpaceMode.LocalToReference && coordinateSpaceReference != null)
+        {
+            return coordinateSpaceReference.InverseTransformPoint(worldPosition);
+        }
+
+        return worldPosition;
+    }
+
+    private Vector3 ToOutputPosition(Vector3 worldPosition, Vector3 handOriginWorldPosition, Quaternion handOriginWorldRotation)
+    {
+        if (coordinateSpace == CoordinateSpaceMode.HandLocal)
+        {
+            return Quaternion.Inverse(handOriginWorldRotation) * (worldPosition - handOriginWorldPosition);
+        }
+
+        return ToOutputPosition(worldPosition);
+    }
+
+    private Quaternion ToOutputRotation(Quaternion worldRotation, Quaternion handOriginWorldRotation)
+    {
+        if (coordinateSpace == CoordinateSpaceMode.HandLocal)
+        {
+            return Quaternion.Inverse(handOriginWorldRotation) * worldRotation;
+        }
+
+        return worldRotation;
     }
 
     private HandData BuildHandData(OVRHand hand, OVRSkeleton skeleton)
@@ -226,13 +370,13 @@ public class HandTrackingUdpSender_Debuggable : MonoBehaviour
             return data;
         }
 
-        Vector3 wristPosition = GetWristPosition(skeleton);
+        Vector3 wristWorldPosition = GetWristPosition(skeleton);
         Quaternion wristRotation = GetWristRotation(skeleton);
 
         data.tracked = true;
-        data.wristPosition = new Vec3(wristPosition);
-        data.wristRotation = new Quat(wristRotation);
-        data.indexTipPosition = new Vec3(GetBonePosition(skeleton, OVRSkeleton.BoneId.Hand_IndexTip, wristPosition));
+        data.wristPosition = new Vec3(ToOutputPosition(wristWorldPosition, wristWorldPosition, wristRotation));
+        data.wristRotation = new Quat(ToOutputRotation(wristRotation, wristRotation));
+        data.indexTipPosition = new Vec3(ToOutputPosition(GetBonePosition(skeleton, OVRSkeleton.BoneId.Hand_IndexTip, wristWorldPosition), wristWorldPosition, wristRotation));
         data.indexPinchStrength = hand.GetFingerPinchStrength(OVRHand.HandFinger.Index);
         data.middlePinchStrength = hand.GetFingerPinchStrength(OVRHand.HandFinger.Middle);
         data.ringPinchStrength = hand.GetFingerPinchStrength(OVRHand.HandFinger.Ring);
