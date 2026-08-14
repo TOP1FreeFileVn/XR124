@@ -2,7 +2,6 @@ using UnityEditor;
 using UnityEditor.Events;
 using UnityEngine;
 using UnityEngine.UI;
-using System;
 
 [CustomEditor(typeof(HandJointDebugVisualizer))]
 public class HandJointDebugVisualizerEditor : Editor
@@ -16,7 +15,6 @@ public class HandJointDebugVisualizerEditor : Editor
     private const float GrabHeaderTop = 18f;
     private const float GrabHeaderWidth = 900f;
     private const float GrabHeaderHeight = 46f;
-    private const float GrabHeaderDepth = 18f;
 
     public override void OnInspectorGUI()
     {
@@ -44,9 +42,14 @@ public class HandJointDebugVisualizerEditor : Editor
             CreateAndBindWorldSpaceUi(visualizer);
         }
 
-        if (GUILayout.Button("Add Grab Header To Existing UI"))
+        if (GUILayout.Button("Add Hide UI Buttons To Existing Canvas"))
         {
-            AddGrabHeaderToExistingUi();
+            AddVisibilityButtonsToExistingCanvas();
+        }
+
+        if (GUILayout.Button("Configure Existing UI Overlay For XR"))
+        {
+            ConfigureExistingUiOverlay(visualizer);
         }
 
         EditorGUILayout.Space(12f);
@@ -98,9 +101,8 @@ public class HandJointDebugVisualizerEditor : Editor
         visualizer.ApplyDefaultJointStyles();
         EnsureTextOutputs(visualizer);
 
-        GameObject canvasObject = new GameObject("Hand Joint UI Canvas", typeof(RectTransform), typeof(Canvas), typeof(CanvasScaler), typeof(GraphicRaycaster), typeof(WorldSpaceDebugUiFollower), typeof(HandJointUiPanelToggle));
+        GameObject canvasObject = new GameObject("Hand Joint UI Canvas", typeof(RectTransform), typeof(Canvas), typeof(CanvasScaler), typeof(GraphicRaycaster));
         Undo.RegisterCreatedObjectUndo(canvasObject, "Create Hand Joint UI Canvas");
-        Component inputModeUi = AddComponentByTypeName(canvasObject, "MetaHandInputModeUi");
 
         Canvas canvas = canvasObject.GetComponent<Canvas>();
         canvas.renderMode = RenderMode.WorldSpace;
@@ -109,14 +111,6 @@ public class HandJointDebugVisualizerEditor : Editor
         canvasRect.sizeDelta = new Vector2(PanelWidth, PanelHeight);
         canvasRect.localScale = Vector3.one * 0.0018f;
         PlaceCanvas(canvasObject.transform);
-
-        WorldSpaceDebugUiFollower follower = canvasObject.GetComponent<WorldSpaceDebugUiFollower>();
-        follower.target = FindCameraTarget();
-        follower.distance = 1.5f;
-        follower.viewPlaneOffset = new Vector2(0f, -0.08f);
-        follower.followEveryFrame = false;
-        follower.keepUpright = true;
-        follower.forceCameraCullingMask = true;
 
         GameObject panelObject = new GameObject("Panel", typeof(RectTransform), typeof(Image));
         Undo.RegisterCreatedObjectUndo(panelObject, "Create Hand Joint UI Panel");
@@ -133,33 +127,11 @@ public class HandJointDebugVisualizerEditor : Editor
 
         Font font = GetBuiltinFont();
         float y = -24f;
-        Text hideLabel = CreateButton(canvasObject.transform, font, "Hide Debug UI Button", "Hide UI", -18f, -18f, 130f);
-        Text showLabel = CreateButton(canvasObject.transform, font, "Show Debug UI Button", "Show UI", -18f, -18f, 130f);
-        Text inputModeLabel = CreateText(canvasObject.transform, font, "Input: -", PanelWidth - 500f, -66f, 480f, 14, FontStyle.Bold, new Color(0.72f, 0.92f, 1f, 1f));
-
-        HandJointUiPanelToggle panelToggle = canvasObject.GetComponent<HandJointUiPanelToggle>();
-        panelToggle.panelRoot = panelObject;
-        panelToggle.hideButtonRoot = hideLabel.GetComponentInParent<Button>().gameObject;
-        panelToggle.showButtonRoot = showLabel.GetComponentInParent<Button>().gameObject;
-        panelToggle.buttonLabel = showLabel;
-        panelToggle.visibleText = "Hide UI";
-        panelToggle.hiddenText = "Show UI";
-        panelToggle.startVisible = true;
-
-        Button hideButton = hideLabel.GetComponentInParent<Button>();
-        UnityEventTools.AddPersistentListener(hideButton.onClick, panelToggle.Hide);
-
-        Button showButton = showLabel.GetComponentInParent<Button>();
-        UnityEventTools.AddPersistentListener(showButton.onClick, panelToggle.Show);
-        panelToggle.SetVisible(true);
-
-        CreateInputModeButtons(canvasObject.transform, font, inputModeUi);
-        ConfigureInputModeUi(inputModeUi, inputModeLabel);
-
         GameObject markerRoot = new GameObject("Hand Joint Color Markers");
         Undo.RegisterCreatedObjectUndo(markerRoot, "Create Hand Joint Color Markers");
 
-        CreateGrabHeader(canvasObject, panelObject.transform, font);
+        CreateVisualGrabHeader(panelObject.transform, font);
+        CreateVisibilityButtons(canvasObject, panelObject, font);
         CreateHeader(panelObject.transform, font, "Hand Joint UI", ref y);
         float leftY = -68f;
         float rightY = -68f;
@@ -180,21 +152,80 @@ public class HandJointDebugVisualizerEditor : Editor
         Debug.Log("Meta Hand Tracking Support set to " + support);
     }
 
-    private static void AddGrabHeaderToExistingUi()
+    private static void AddVisibilityButtonsToExistingCanvas()
     {
         GameObject canvasObject = GameObject.Find("Hand Joint UI Canvas");
-        if (canvasObject == null)
+        Transform panel = canvasObject != null ? canvasObject.transform.Find("Panel") : null;
+
+        if (panel == null)
         {
-            Debug.LogWarning("Hand Joint UI Canvas was not found in the scene.");
+            Debug.LogWarning("Hand Joint UI Canvas or its Panel was not found in the scene.");
             return;
         }
 
-        Transform panel = canvasObject.transform.Find("Panel");
-        Transform visualParent = panel != null ? panel : canvasObject.transform;
-        CreateGrabHeader(canvasObject, visualParent, GetBuiltinFont());
-
+        CreateVisibilityButtons(canvasObject, panel.gameObject, GetBuiltinFont());
         EditorUtility.SetDirty(canvasObject);
         Selection.activeGameObject = canvasObject;
+    }
+
+    private static void ConfigureExistingUiOverlay(HandJointDebugVisualizer visualizer)
+    {
+        GameObject canvasObject = GameObject.Find("Hand Joint UI Canvas");
+        Component overlay = canvasObject != null ? canvasObject.GetComponent("OVROverlayCanvas") : null;
+        int overlayLayer = LayerMask.NameToLayer("Overlay UI");
+
+        if (canvasObject == null || overlay == null)
+        {
+            Debug.LogWarning("Add OVROverlayCanvas to Hand Joint UI Canvas before configuring it.");
+            return;
+        }
+
+        if (overlayLayer < 0)
+        {
+            Debug.LogWarning("The Overlay UI layer was not found.");
+            return;
+        }
+
+        Undo.RecordObject(canvasObject, "Configure Hand Joint UI Overlay");
+        canvasObject.layer = overlayLayer;
+        SetLayerRecursively(canvasObject.transform.Find("Panel"), overlayLayer);
+        SetLayerRecursively(canvasObject.transform.Find("Show UI Button"), overlayLayer);
+
+        Camera xrCamera = FindCameraTarget()?.GetComponent<Camera>();
+        if (xrCamera != null)
+        {
+            Undo.RecordObject(xrCamera, "Exclude Overlay UI From XR Camera");
+            xrCamera.cullingMask &= ~(1 << overlayLayer);
+        }
+
+        SerializedObject overlayProperties = new SerializedObject(overlay);
+        overlayProperties.FindProperty("manualRedraw").boolValue = true;
+        overlayProperties.FindProperty("renderInterval").intValue = 1;
+        overlayProperties.FindProperty("_dynamicResolution").boolValue = false;
+        overlayProperties.ApplyModifiedPropertiesWithoutUndo();
+
+        SerializedObject visualizerProperties = new SerializedObject(visualizer);
+        visualizerProperties.FindProperty("overlayCanvas").objectReferenceValue = overlay;
+        visualizerProperties.ApplyModifiedPropertiesWithoutUndo();
+
+        EditorUtility.SetDirty(canvasObject);
+        EditorUtility.SetDirty(overlay);
+        EditorUtility.SetDirty(xrCamera);
+        EditorUtility.SetDirty(visualizer);
+        Selection.activeGameObject = canvasObject;
+    }
+
+    private static void SetLayerRecursively(Transform root, int layer)
+    {
+        if (root == null)
+        {
+            return;
+        }
+
+        foreach (Transform child in root.GetComponentsInChildren<Transform>(true))
+        {
+            child.gameObject.layer = layer;
+        }
     }
 
     private static void CreateHandTable(Transform parent, Font font, Transform markerRoot, HandJointDebugVisualizer.HandUiBindings hand, string label, float x, ref float y)
@@ -287,29 +318,20 @@ public class HandJointDebugVisualizerEditor : Editor
         binding.marker = CreateJointMarker(markerRoot, $"{sideLabel} {label}", binding.color);
     }
 
-    private static void CreateGrabHeader(GameObject canvasObject, Transform visualParent, Font font)
+    private static Text CreateText(Transform parent, Font font, string name, float x, ref float y, int fontSize, FontStyle fontStyle)
     {
-        Transform existingHeader = visualParent.Find("Grab Header");
-        GameObject headerObject;
-        if (existingHeader != null)
-        {
-            headerObject = existingHeader.gameObject;
-            Undo.RecordObject(headerObject, "Update Hand Joint UI Grab Header");
-        }
-        else
-        {
-            headerObject = new GameObject("Grab Header", typeof(RectTransform), typeof(Image));
-            Undo.RegisterCreatedObjectUndo(headerObject, "Create Hand Joint UI Grab Header");
-            headerObject.transform.SetParent(visualParent, false);
-        }
+        Text text = CreateText(parent, font, name, x, y, HandColumnWidth, fontSize, fontStyle, Color.white);
+        y -= RowHeight;
+        return text;
+    }
+
+    private static void CreateVisualGrabHeader(Transform parent, Font font)
+    {
+        GameObject headerObject = new GameObject("Grab Header", typeof(RectTransform), typeof(Image));
+        Undo.RegisterCreatedObjectUndo(headerObject, "Create Hand Joint UI Grab Header");
+        headerObject.transform.SetParent(parent, false);
 
         RectTransform rect = headerObject.GetComponent<RectTransform>();
-        if (rect == null)
-        {
-            Debug.LogWarning("Grab Header exists but is not a UI RectTransform.");
-            return;
-        }
-
         rect.anchorMin = new Vector2(0f, 1f);
         rect.anchorMax = new Vector2(0f, 1f);
         rect.pivot = new Vector2(0f, 1f);
@@ -317,46 +339,20 @@ public class HandJointDebugVisualizerEditor : Editor
         rect.sizeDelta = new Vector2(GrabHeaderWidth, GrabHeaderHeight);
 
         Image image = headerObject.GetComponent<Image>();
-        if (image == null)
-        {
-            image = Undo.AddComponent<Image>(headerObject);
-        }
-
         image.color = new Color(0.055f, 0.09f, 0.12f, 0.92f);
         image.raycastTarget = false;
 
-        Transform existingLabel = headerObject.transform.Find("Label");
-        GameObject labelObject;
-        if (existingLabel != null)
-        {
-            labelObject = existingLabel.gameObject;
-            Undo.RecordObject(labelObject, "Update Grab Header Label");
-        }
-        else
-        {
-            labelObject = new GameObject("Label", typeof(RectTransform), typeof(Text));
-            Undo.RegisterCreatedObjectUndo(labelObject, "Create Grab Header Label");
-            labelObject.transform.SetParent(headerObject.transform, false);
-        }
+        GameObject labelObject = new GameObject("Label", typeof(RectTransform), typeof(Text));
+        Undo.RegisterCreatedObjectUndo(labelObject, "Create Grab Header Label");
+        labelObject.transform.SetParent(headerObject.transform, false);
 
         RectTransform labelRect = labelObject.GetComponent<RectTransform>();
-        if (labelRect == null)
-        {
-            Debug.LogWarning("Grab Header Label exists but is not a UI RectTransform.");
-            return;
-        }
-
         labelRect.anchorMin = Vector2.zero;
         labelRect.anchorMax = Vector2.one;
         labelRect.offsetMin = new Vector2(14f, 0f);
         labelRect.offsetMax = new Vector2(-14f, 0f);
 
         Text label = labelObject.GetComponent<Text>();
-        if (label == null)
-        {
-            label = Undo.AddComponent<Text>(labelObject);
-        }
-
         label.font = font;
         label.fontSize = 15;
         label.fontStyle = FontStyle.Bold;
@@ -364,58 +360,81 @@ public class HandJointDebugVisualizerEditor : Editor
         label.raycastTarget = false;
         label.color = new Color(0.72f, 0.92f, 1f, 1f);
         label.text = "Grab here";
-
-        ConfigureGrabHeaderProxy(headerObject, canvasObject.transform);
-
-        BoxCollider grabCollider = canvasObject.GetComponent<BoxCollider>();
-        if (grabCollider == null)
-        {
-            grabCollider = Undo.AddComponent<BoxCollider>(canvasObject);
-        }
-
-        grabCollider.isTrigger = true;
-        grabCollider.center = new Vector3(
-            -PanelWidth * 0.5f + GrabHeaderLeft + GrabHeaderWidth * 0.5f,
-            PanelHeight * 0.5f - GrabHeaderTop - GrabHeaderHeight * 0.5f,
-            0f);
-        grabCollider.size = new Vector3(GrabHeaderWidth, GrabHeaderHeight, GrabHeaderDepth);
-
-        Rigidbody rigidbody = canvasObject.GetComponent<Rigidbody>();
-        if (rigidbody == null)
-        {
-            rigidbody = Undo.AddComponent<Rigidbody>(canvasObject);
-        }
-
-        rigidbody.isKinematic = true;
-        rigidbody.useGravity = false;
-        rigidbody.interpolation = RigidbodyInterpolation.None;
-        rigidbody.collisionDetectionMode = CollisionDetectionMode.Discrete;
     }
 
-    private static void ConfigureGrabHeaderProxy(GameObject headerObject, Transform moveRoot)
+    private static void CreateVisibilityButtons(GameObject canvasObject, GameObject panelObject, Font font)
     {
-        Component proxy = GetOrAddComponentByTypeName(headerObject, "HandJointUiGrabHeaderProxy");
-        if (proxy == null)
-        {
-            return;
-        }
+        Button hideButton = CreateOrUpdateButton(panelObject.transform, font, "Hide UI Button", "Hide UI", -18f, -18f, 130f);
+        Button showButton = CreateOrUpdateButton(canvasObject.transform, font, "Show UI Button", "Show UI", -18f, -18f, 130f);
 
-        SerializedObject serializedObject = new SerializedObject(proxy);
-        serializedObject.FindProperty("moveRoot").objectReferenceValue = moveRoot;
-        serializedObject.FindProperty("proxyPositionToRoot").boolValue = true;
-        serializedObject.FindProperty("resetHeaderRotation").boolValue = true;
-        serializedObject.FindProperty("resetHeaderScale").boolValue = true;
-        serializedObject.ApplyModifiedPropertiesWithoutUndo();
+        Undo.RecordObject(hideButton, "Configure Hide UI Button");
+        hideButton.onClick = new Button.ButtonClickedEvent();
+        UnityEventTools.AddBoolPersistentListener(hideButton.onClick, panelObject.SetActive, false);
+        UnityEventTools.AddBoolPersistentListener(hideButton.onClick, showButton.gameObject.SetActive, true);
 
-        proxy.GetType().GetMethod("CaptureCurrentLocalPose")?.Invoke(proxy, null);
-        EditorUtility.SetDirty(proxy);
+        Undo.RecordObject(showButton, "Configure Show UI Button");
+        showButton.onClick = new Button.ButtonClickedEvent();
+        UnityEventTools.AddBoolPersistentListener(showButton.onClick, panelObject.SetActive, true);
+        UnityEventTools.AddBoolPersistentListener(showButton.onClick, showButton.gameObject.SetActive, false);
+
+        showButton.gameObject.SetActive(false);
     }
 
-    private static Text CreateText(Transform parent, Font font, string name, float x, ref float y, int fontSize, FontStyle fontStyle)
+    private static Button CreateOrUpdateButton(Transform parent, Font font, string name, string labelText, float xFromRight, float yFromTop, float width)
     {
-        Text text = CreateText(parent, font, name, x, y, HandColumnWidth, fontSize, fontStyle, Color.white);
-        y -= RowHeight;
-        return text;
+        Transform existing = parent.Find(name);
+        GameObject buttonObject;
+        if (existing != null)
+        {
+            buttonObject = existing.gameObject;
+            Undo.RecordObject(buttonObject, "Update Hand Joint UI Button");
+        }
+        else
+        {
+            buttonObject = new GameObject(name, typeof(RectTransform), typeof(Image), typeof(Button));
+            Undo.RegisterCreatedObjectUndo(buttonObject, "Create Hand Joint UI Button");
+            buttonObject.transform.SetParent(parent, false);
+        }
+
+        RectTransform rect = buttonObject.GetComponent<RectTransform>();
+        rect.anchorMin = Vector2.one;
+        rect.anchorMax = Vector2.one;
+        rect.pivot = Vector2.one;
+        rect.anchoredPosition = new Vector2(xFromRight, yFromTop);
+        rect.sizeDelta = new Vector2(width, 42f);
+
+        Image image = buttonObject.GetComponent<Image>();
+        image.color = new Color(0.08f, 0.12f, 0.16f, 0.95f);
+
+        Transform existingLabel = buttonObject.transform.Find("Label");
+        GameObject labelObject;
+        if (existingLabel != null)
+        {
+            labelObject = existingLabel.gameObject;
+        }
+        else
+        {
+            labelObject = new GameObject("Label", typeof(RectTransform), typeof(Text));
+            Undo.RegisterCreatedObjectUndo(labelObject, "Create Hand Joint UI Button Label");
+            labelObject.transform.SetParent(buttonObject.transform, false);
+        }
+
+        RectTransform labelRect = labelObject.GetComponent<RectTransform>();
+        labelRect.anchorMin = Vector2.zero;
+        labelRect.anchorMax = Vector2.one;
+        labelRect.offsetMin = Vector2.zero;
+        labelRect.offsetMax = Vector2.zero;
+
+        Text label = labelObject.GetComponent<Text>();
+        label.font = font;
+        label.fontSize = 16;
+        label.fontStyle = FontStyle.Bold;
+        label.alignment = TextAnchor.MiddleCenter;
+        label.raycastTarget = false;
+        label.color = new Color(0.72f, 0.92f, 1f, 1f);
+        label.text = labelText;
+
+        return buttonObject.GetComponent<Button>();
     }
 
     private static Text CreateText(Transform parent, Font font, string name, float x, float y, float width, int fontSize, FontStyle fontStyle, Color color)
@@ -443,113 +462,6 @@ public class HandJointDebugVisualizerEditor : Editor
         text.text = name;
 
         return text;
-    }
-
-    private static Text CreateButton(Transform parent, Font font, string name, string labelText, float xFromRight, float yFromTop, float width)
-    {
-        GameObject buttonObject = new GameObject(name, typeof(RectTransform), typeof(Image), typeof(Button));
-        Undo.RegisterCreatedObjectUndo(buttonObject, "Create Hand Joint UI Button");
-        buttonObject.transform.SetParent(parent, false);
-
-        RectTransform rect = buttonObject.GetComponent<RectTransform>();
-        rect.anchorMin = new Vector2(1f, 1f);
-        rect.anchorMax = new Vector2(1f, 1f);
-        rect.pivot = new Vector2(1f, 1f);
-        rect.anchoredPosition = new Vector2(xFromRight, yFromTop);
-        rect.sizeDelta = new Vector2(width, 42f);
-
-        Image image = buttonObject.GetComponent<Image>();
-        image.color = new Color(0.08f, 0.12f, 0.16f, 0.95f);
-
-        GameObject labelObject = new GameObject("Label", typeof(RectTransform), typeof(Text));
-        Undo.RegisterCreatedObjectUndo(labelObject, "Create Toggle Debug UI Button Label");
-        labelObject.transform.SetParent(buttonObject.transform, false);
-
-        RectTransform labelRect = labelObject.GetComponent<RectTransform>();
-        labelRect.anchorMin = Vector2.zero;
-        labelRect.anchorMax = Vector2.one;
-        labelRect.offsetMin = Vector2.zero;
-        labelRect.offsetMax = Vector2.zero;
-
-        Text label = labelObject.GetComponent<Text>();
-        label.font = font;
-        label.fontSize = 16;
-        label.fontStyle = FontStyle.Bold;
-        label.alignment = TextAnchor.MiddleCenter;
-        label.raycastTarget = false;
-        label.color = new Color(0.72f, 0.92f, 1f, 1f);
-        label.text = labelText;
-
-        return label;
-    }
-
-    private static void CreateInputModeButtons(Transform parent, Font font, Component inputModeUi)
-    {
-        Text handsLabel = CreateButton(parent, font, "Hands Only Button", "Hands", -158f, -18f, 120f);
-        Text bothLabel = CreateButton(parent, font, "Hands And Controllers Button", "Hands + Ctrl", -288f, -18f, 150f);
-        Text controllersLabel = CreateButton(parent, font, "Controllers Only Button", "Ctrl", -448f, -18f, 110f);
-
-        if (inputModeUi == null)
-        {
-            return;
-        }
-
-        SerializedObject serializedObject = new SerializedObject(inputModeUi);
-        serializedObject.FindProperty("handsOnlyButton").objectReferenceValue = handsLabel.GetComponentInParent<Button>();
-        serializedObject.FindProperty("controllersAndHandsButton").objectReferenceValue = bothLabel.GetComponentInParent<Button>();
-        serializedObject.FindProperty("controllersOnlyButton").objectReferenceValue = controllersLabel.GetComponentInParent<Button>();
-        serializedObject.ApplyModifiedPropertiesWithoutUndo();
-    }
-
-    private static void ConfigureInputModeUi(Component inputModeUi, Text stateText)
-    {
-        if (inputModeUi == null)
-        {
-            return;
-        }
-
-        SerializedObject serializedObject = new SerializedObject(inputModeUi);
-        serializedObject.FindProperty("stateText").objectReferenceValue = stateText;
-        serializedObject.ApplyModifiedPropertiesWithoutUndo();
-    }
-
-    private static Component AddComponentByTypeName(GameObject target, string typeName)
-    {
-        Type type = FindType(typeName);
-        if (type == null)
-        {
-            Debug.LogWarning(typeName + " was not found. The generated UI will not include input mode behavior.");
-            return null;
-        }
-
-        return target.AddComponent(type);
-    }
-
-    private static Component GetOrAddComponentByTypeName(GameObject target, string typeName)
-    {
-        Type type = FindType(typeName);
-        if (type == null)
-        {
-            Debug.LogWarning(typeName + " was not found. The generated grab header will only work when this script compiles.");
-            return null;
-        }
-
-        Component existing = target.GetComponent(type);
-        return existing != null ? existing : Undo.AddComponent(target, type);
-    }
-
-    private static Type FindType(string typeName)
-    {
-        foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
-        {
-            Type type = assembly.GetType(typeName);
-            if (type != null)
-            {
-                return type;
-            }
-        }
-
-        return null;
     }
 
     private static void CreateHeader(Transform parent, Font font, string title, ref float y)

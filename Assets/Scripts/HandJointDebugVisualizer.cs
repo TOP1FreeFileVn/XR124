@@ -24,12 +24,12 @@ public class HandJointDebugVisualizer : MonoBehaviour
 
         public void SetText(string value)
         {
-            if (uiText != null)
+            if (uiText != null && uiText.text != value)
             {
                 uiText.text = value;
             }
 
-            if (tmpText != null)
+            if (tmpText != null && tmpText.text != value)
             {
                 tmpText.text = value;
             }
@@ -37,12 +37,12 @@ public class HandJointDebugVisualizer : MonoBehaviour
 
         public void SetColor(Color color)
         {
-            if (uiText != null)
+            if (uiText != null && uiText.color != color)
             {
                 uiText.color = color;
             }
 
-            if (tmpText != null)
+            if (tmpText != null && tmpText.color != color)
             {
                 tmpText.color = color;
             }
@@ -107,6 +107,16 @@ public class HandJointDebugVisualizer : MonoBehaviour
     public int decimalPlaces = 3;
     public float markerSize = 0.018f;
 
+    [Header("UI Refresh")]
+    [Min(1f)] public float textRefreshRate = 8f;
+
+    [Header("Overlay Refresh")]
+    public OVROverlayCanvas overlayCanvas;
+    public bool requestOverlayRedraw = true;
+
+    private float nextTextRefreshTime;
+    private bool refreshTextThisFrame;
+
     public void SetVisible(bool visible)
     {
         showUi = visible;
@@ -149,6 +159,12 @@ public class HandJointDebugVisualizer : MonoBehaviour
     private void LateUpdate()
     {
         EnsureSources();
+        refreshTextThisFrame = Time.unscaledTime >= nextTextRefreshTime;
+
+        if (refreshTextThisFrame)
+        {
+            nextTextRefreshTime = Time.unscaledTime + 1f / Mathf.Max(1f, textRefreshRate);
+        }
 
         if (!showUi)
         {
@@ -159,6 +175,11 @@ public class HandJointDebugVisualizer : MonoBehaviour
 
         UpdateHand("L", leftHand);
         UpdateHand("R", rightHand);
+
+        if (refreshTextThisFrame && requestOverlayRedraw && overlayCanvas != null)
+        {
+            overlayCanvas.SetFrameDirty();
+        }
     }
 
     private void EnsureSources()
@@ -210,11 +231,11 @@ public class HandJointDebugVisualizer : MonoBehaviour
         bool ready = tracked && hasSkeleton;
 
         SetHandActive(handUi, ready);
-        handUi.trackedText?.SetText(ready ? "tracked" : notTrackedText);
+        SetTextWhenDue(handUi.trackedText, ready ? "tracked" : notTrackedText);
 
         if (!ready)
         {
-            handUi.summaryText?.SetText($"{side} {notTrackedText}");
+            SetTextWhenDue(handUi.summaryText, $"{side} {notTrackedText}");
             SetStandardJointsMissing(handUi);
             return;
         }
@@ -223,7 +244,7 @@ public class HandJointDebugVisualizer : MonoBehaviour
 
         Vector3 wrist = GetOutputPosition(handUi.skeleton, OVRSkeleton.BoneId.Hand_WristRoot);
         Vector3 index = GetOutputPosition(handUi.skeleton, OVRSkeleton.BoneId.Hand_IndexTip);
-        handUi.summaryText?.SetText($"{side} wrist {FormatVector(wrist)} | index {FormatVector(index)}");
+        SetTextWhenDue(handUi.summaryText, $"{side} wrist {FormatVector(wrist)} | index {FormatVector(index)}");
     }
 
     private void UpdateStandardJoints(HandUiBindings handUi)
@@ -260,18 +281,18 @@ public class HandJointDebugVisualizer : MonoBehaviour
         string label = string.IsNullOrWhiteSpace(binding.displayName) ? ShortBoneName(binding.boneId) : binding.displayName;
         string prefix = includeJointName ? label + " " : "";
 
-        binding.positionText?.SetText(prefix + FormatVector(outputPosition));
-        binding.positionText?.SetColor(binding.color);
+        SetTextWhenDue(binding.positionText, prefix + FormatVector(outputPosition));
+        SetColorWhenDue(binding.positionText, binding.color);
 
         if (binding.showRotation)
         {
-            binding.rotationText?.SetText(FormatQuaternion(outputRotation));
-            binding.rotationText?.SetColor(binding.color);
+            SetTextWhenDue(binding.rotationText, FormatQuaternion(outputRotation));
+            SetColorWhenDue(binding.rotationText, binding.color);
         }
 
         if (binding.marker != null)
         {
-            binding.marker.gameObject.SetActive(true);
+            SetActiveIfChanged(binding.marker.gameObject, true);
             binding.marker.position = bone.position;
             binding.marker.localScale = Vector3.one * markerSize;
             ApplyMarkerColor(binding.marker, binding.color);
@@ -279,23 +300,23 @@ public class HandJointDebugVisualizer : MonoBehaviour
 
         if (binding.activeWhenTracked != null)
         {
-            binding.activeWhenTracked.SetActive(true);
+            SetActiveIfChanged(binding.activeWhenTracked, true);
         }
     }
 
     private void SetMissing(JointUiBinding binding)
     {
-        binding.positionText?.SetText(missingText);
-        binding.rotationText?.SetText(missingText);
+        SetTextWhenDue(binding.positionText, missingText);
+        SetTextWhenDue(binding.rotationText, missingText);
 
         if (binding.marker != null)
         {
-            binding.marker.gameObject.SetActive(false);
+            SetActiveIfChanged(binding.marker.gameObject, false);
         }
 
         if (binding.activeWhenTracked != null)
         {
-            binding.activeWhenTracked.SetActive(false);
+            SetActiveIfChanged(binding.activeWhenTracked, false);
         }
     }
 
@@ -378,9 +399,30 @@ public class HandJointDebugVisualizer : MonoBehaviour
 
     private void SetHandActive(HandUiBindings handUi, bool active)
     {
-        if (handUi.activeWhenTracked != null)
+        SetActiveIfChanged(handUi.activeWhenTracked, active);
+    }
+
+    private void SetTextWhenDue(TextOutput output, string value)
+    {
+        if (refreshTextThisFrame)
         {
-            handUi.activeWhenTracked.SetActive(active);
+            output?.SetText(value);
+        }
+    }
+
+    private void SetColorWhenDue(TextOutput output, Color color)
+    {
+        if (refreshTextThisFrame)
+        {
+            output?.SetColor(color);
+        }
+    }
+
+    private static void SetActiveIfChanged(GameObject target, bool active)
+    {
+        if (target != null && target.activeSelf != active)
+        {
+            target.SetActive(active);
         }
     }
 
@@ -435,9 +477,15 @@ public class HandJointDebugVisualizer : MonoBehaviour
             return null;
         }
 
+        OVRSkeleton.BoneId resolvedBoneId = MetaHandBoneIdResolver.ResolveLegacyIdForSkeleton(skeleton, boneId);
+        if (resolvedBoneId == OVRSkeleton.BoneId.Invalid)
+        {
+            return null;
+        }
+
         foreach (OVRBone bone in skeleton.Bones)
         {
-            if (bone.Id == boneId)
+            if (bone.Id == resolvedBoneId)
             {
                 return bone.Transform;
             }

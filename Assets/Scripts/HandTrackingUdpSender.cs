@@ -410,9 +410,15 @@ public class HandTrackingUdpSender_Debuggable : MonoBehaviour
             return null;
         }
 
+        OVRSkeleton.BoneId resolvedBoneId = MetaHandBoneIdResolver.ResolveLegacyIdForSkeleton(skeleton, boneId);
+        if (resolvedBoneId == OVRSkeleton.BoneId.Invalid)
+        {
+            return null;
+        }
+
         foreach (OVRBone bone in skeleton.Bones)
         {
-            if (bone.Id == boneId)
+            if (bone.Id == resolvedBoneId)
             {
                 return bone.Transform;
             }
