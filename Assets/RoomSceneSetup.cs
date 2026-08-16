@@ -34,7 +34,7 @@ public class RoomSceneSetup : MonoBehaviour
         UnsubscribeFromMRUK();
     }
 
-    // Mo Space Setup cua Quest. Khi nguoi dung xac nhan, he thong tu luu room tren kinh.
+    // Mở Space Setup của Quest; khi người dùng xác nhận, hệ thống tự lưu phòng trên kính.
     public async void ScanAndSaveRoom()
     {
         if (scanInProgress)
@@ -73,7 +73,7 @@ public class RoomSceneSetup : MonoBehaviour
         }
     }
 
-    // Tai lai room da duoc Quest luu ma khong mo man hinh quet moi.
+    // Tải lại phòng đã được Quest lưu mà không mở màn hình quét mới.
     public async void LoadSavedRoom()
     {
         if (MRUK.Instance == null || scanInProgress)

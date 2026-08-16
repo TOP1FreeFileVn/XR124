@@ -1,7 +1,6 @@
 using System.Collections.Generic;
 using Meta.XR.MRUtilityKit;
 using UnityEngine;
-using UnityEngine.Serialization;
 
 public class PocketControl : MonoBehaviour
 {
@@ -10,7 +9,7 @@ public class PocketControl : MonoBehaviour
         Idle,
         Priming,
         Controlling,
-        Pulling
+        Holding
     }
 
     private enum ControlAxis
@@ -41,6 +40,14 @@ public class PocketControl : MonoBehaviour
     public bool centerBoundsOnStart = true;
     public Vector3 boundsCenter;
 
+    [Header("Controller Joystick")]
+    public bool enableControllerJoystick = true;
+    public OVRInput.Axis2D joystickAxis = OVRInput.Axis2D.PrimaryThumbstick;
+    public OVRInput.Controller joystickController = OVRInput.Controller.LTouch;
+    [Range(0f, 0.9f)] public float joystickDeadZone = 0.15f;
+    [Min(0f)] public float joystickMoveSpeed = 3f;
+    [Min(0f)] public float joystickSmoothTime = 0.08f;
+
     [Header("MRUK Floor")]
     public bool useScannedRoomFloor = true;
     public bool keepInsideScannedRoom = true;
@@ -48,19 +55,12 @@ public class PocketControl : MonoBehaviour
     [Min(0f)] public float floorClearance = 0.01f;
     [Min(0.1f)] public float floorRayStartHeight = 2f;
 
-    [Header("Fist Pull")]
-    [FormerlySerializedAs("returnSpeed")]
-    [Min(0f)] public float pullSpeed = 5f;
-    [FormerlySerializedAs("returnStopDistance")]
-    [Min(0.1f)] public float closestDistanceToPlayer = 1f;
-    [FormerlySerializedAs("resetHoldSeconds")]
-    [Min(0f)] public float fistPullHoldSeconds = 0.1f;
-
-    [Header("Obstacle Avoidance")]
-    public bool avoidObstaclesWhilePulling = true;
-    [Min(0.05f)] public float avoidanceLookAhead = 0.4f;
-    [Range(15f, 120f)] public float maximumAvoidanceAngle = 90f;
-    [Range(1, 12)] public int avoidanceDirectionSamples = 6;
+    [Header("MRUK Safe Spawn")]
+    public bool relocateInvalidSpawn = true;
+    [Min(0.1f)] public float safeSpawnSearchRadius = 4f;
+    [Min(0.05f)] public float safeSpawnRingStep = 0.3f;
+    [Range(8, 64)] public int safeSpawnSamplesPerRing = 24;
+    public LayerMask safeSpawnCollisionMask = ~0;
 
     [Header("Gesture Recognition")]
     [Range(0.5f, 1f)] public float extendedRatio = 0.82f;
@@ -79,10 +79,13 @@ public class PocketControl : MonoBehaviour
     [Header("Runtime Debug")]
     [SerializeField] private AnchorControlState controlState;
     [SerializeField] private bool isControlling;
-    [SerializeField] private bool isPullingTowardPlayer;
+    [SerializeField] private bool isHoldingForFist;
+    [SerializeField] private bool isJoystickControlling;
+    [SerializeField] private Vector2 joystickInput;
     [SerializeField] private bool isOpenHand;
     [SerializeField] private bool isFist;
     [SerializeField] private bool roomFloorReady;
+    [SerializeField] private string roomPlacementState = "Waiting for MRUK room";
     [SerializeField] private Vector3 anchorPositionWorld;
     [SerializeField] private Vector2 controlOffset;
     [SerializeField, Range(0f, 1f)] private float movementAmount;
@@ -98,6 +101,7 @@ public class PocketControl : MonoBehaviour
     private readonly FingerBoneIds middleIds = new FingerBoneIds();
     private readonly FingerBoneIds ringIds = new FingerBoneIds();
     private readonly FingerBoneIds littleIds = new FingerBoneIds();
+    private readonly Collider[] spawnOverlapResults = new Collider[64];
 
     private OVRSkeleton.BoneId wristId;
     private OVRSkeleton.SkeletonType lastResolvedType = OVRSkeleton.SkeletonType.None;
@@ -108,15 +112,16 @@ public class PocketControl : MonoBehaviour
     private Vector3 initialPosition;
     private float trackingValidSince = -1f;
     private float openPoseSince = -1f;
-    private float fistPoseSince = -1f;
     private float lastOpenPoseTime = -1f;
     private Vector3 smoothedPlanarVelocity;
     private Vector3 velocitySmoothRef;
+    private Vector3 joystickSmoothedVelocity;
+    private Vector3 joystickVelocitySmoothRef;
     private Vector3 anchorForwardWorld;
     private Vector3 anchorRightWorld;
     private MRUKRoom currentRoom;
     private bool roomFloorInitialized;
-    private int avoidanceSide;
+    private float nextSafeSpawnAttemptTime;
     private ControlAxis activeAxis;
     private GameObject anchorVisualRoot;
     private LineRenderer anchorRing;
@@ -155,9 +160,16 @@ public class PocketControl : MonoBehaviour
         SetAnchorVisualVisible(false);
     }
 
+    // Ưu tiên joystick, sau đó đọc tay; nắm tay chỉ giữ nguyên vị trí và không tạo vận tốc di chuyển.
     private void LateUpdate()
     {
         RefreshScannedRoomFloor();
+
+        if (TryMoveWithControllerJoystick())
+        {
+            ReleaseControl();
+            return;
+        }
 
         if (!HasValidTracking())
         {
@@ -187,16 +199,14 @@ public class PocketControl : MonoBehaviour
             return;
         }
 
-        // Nam tay va giu trong mot khoang ngan de keo vat the lai gan nguoi choi.
+        // Nắm tay là trạng thái dừng: nhả anchor và giữ vật thể nguyên tại vị trí hiện tại.
         if (isFist)
         {
-            HandleFistPull();
+            HoldPositionForFist();
             return;
         }
 
-        fistPoseSince = -1f;
-        isPullingTowardPlayer = false;
-        avoidanceSide = 0;
+        isHoldingForFist = false;
 
         if (!isControlling)
         {
@@ -218,14 +228,138 @@ public class PocketControl : MonoBehaviour
         }
     }
 
-    private bool HasValidTracking()
+    // Đọc joystick trái, đổi nó sang hướng camera và di chuyển vật thể qua cùng giới hạn phòng với điều khiển tay.
+    private bool TryMoveWithControllerJoystick()
     {
-        return skeleton != null
-            && controlledObject != null
-            && skeleton.IsDataValid;
+        if (!enableControllerJoystick || controlledObject == null)
+        {
+            ResetJoystickState();
+            return false;
+        }
+
+        Vector2 rawInput = OVRInput.Get(joystickAxis, joystickController);
+        float rawMagnitude = Mathf.Clamp01(rawInput.magnitude);
+        float inputAmount = Mathf.InverseLerp(joystickDeadZone, 1f, rawMagnitude);
+        joystickInput = inputAmount > 0f
+            ? rawInput.normalized * inputAmount
+            : Vector2.zero;
+
+        if (!TryGetMovementBasis(out Vector3 forward, out Vector3 right))
+        {
+            ResetJoystickState();
+            return false;
+        }
+
+        Vector3 targetVelocity = (right * joystickInput.x + forward * joystickInput.y)
+            * joystickMoveSpeed;
+        joystickSmoothedVelocity = Vector3.SmoothDamp(
+            joystickSmoothedVelocity,
+            targetVelocity,
+            ref joystickVelocitySmoothRef,
+            joystickSmoothTime);
+
+        isJoystickControlling = joystickInput.sqrMagnitude > 0f
+            || joystickSmoothedVelocity.sqrMagnitude > 0.0001f;
+        if (!isJoystickControlling)
+        {
+            ResetJoystickState();
+            return false;
+        }
+
+        Vector3 nextPosition = controlledObject.transform.position
+            + joystickSmoothedVelocity * Time.deltaTime;
+        ApplyBoundsAndHeight(ref nextPosition);
+        controlledObject.transform.position = nextPosition;
+        return true;
     }
 
-    // Doc mot lan cac thong so pose can cho activation, release va reset.
+    // Xóa vận tốc còn dư để lần điều khiển joystick tiếp theo không làm vật thể giật bất ngờ.
+    private void ResetJoystickState()
+    {
+        isJoystickControlling = false;
+        joystickInput = Vector2.zero;
+        joystickSmoothedVelocity = Vector3.zero;
+        joystickVelocitySmoothRef = Vector3.zero;
+    }
+
+    private bool HasValidTracking()
+    {
+        return HasValidHandTracking() && controlledObject != null;
+    }
+
+    // Kiểm tra riêng dữ liệu bàn tay để hệ thống kỹ năng vẫn đọc được gesture mà không phụ thuộc vật thể điều khiển.
+    private bool HasValidHandTracking()
+    {
+        return skeleton != null && skeleton.IsDataValid;
+    }
+
+    // Xuất vị trí lòng bàn tay và độ duỗi bốn ngón từ cùng bộ BoneId đã được resolve đúng theo SkeletonType.
+    public bool TryGetSkillHandState(
+        out Vector3 palmPosition,
+        out bool fist,
+        out float index,
+        out float middle,
+        out float ring,
+        out float little)
+    {
+        palmPosition = Vector3.zero;
+        fist = false;
+        index = 0f;
+        middle = 0f;
+        ring = 0f;
+        little = 0f;
+
+        if (!HasValidHandTracking())
+        {
+            return false;
+        }
+
+        if (!boneIdsResolved || skeleton.GetSkeletonType() != lastResolvedType)
+        {
+            ResolveBoneIds();
+        }
+
+        if (!boneIdsResolved || !TryRefreshBoneCache() || !TryReadHandState(out palmPosition))
+        {
+            return false;
+        }
+
+        fist = isFist;
+        index = indexStraightness;
+        middle = middleStraightness;
+        ring = ringStraightness;
+        little = littleStraightness;
+        return true;
+    }
+
+    // Tạo chuỗi chẩn đoán ngắn cho UI mà không thay đổi state hay thuật toán điều khiển hiện tại.
+    public string GetRuntimeDebugText()
+    {
+        string trackingState = skeleton == null
+            ? "Missing skeleton"
+            : $"{skeleton.GetSkeletonType()} / valid={skeleton.IsDataValid}";
+        bool targetLinked = controlledObject != null;
+        bool targetControlled = targetLinked
+            && (isControlling || isJoystickControlling);
+        float commandedSpeed = isJoystickControlling
+            ? joystickSmoothedVelocity.magnitude
+            : smoothedPlanarVelocity.magnitude;
+        string targetName = targetLinked ? controlledObject.name : "Missing object";
+        string targetActive = targetLinked ? controlledObject.activeInHierarchy.ToString() : "False";
+        string objectPosition = controlledObject != null
+            ? controlledObject.transform.position.ToString("F2")
+            : "Missing object";
+
+        // Phân biệt rõ controller đã kích hoạt với target thực sự đang nhận một nguồn điều khiển.
+        return $"TARGET  {targetName} | linked={targetLinked} active={targetActive} controlled={targetControlled} cmdSpeed={commandedSpeed:F2}\n"
+            + $"MOVE  {controlState} | tracking: {trackingState}\n"
+            + $"pose  open={isOpenHand} fist={isFist} | control={isControlling} hold={isHoldingForFist}\n"
+            + $"fingers  I={indexStraightness:F2} M={middleStraightness:F2} R={ringStraightness:F2} L={littleStraightness:F2}\n"
+            + $"anchor  offset={controlOffset} amount={movementAmount:F2} | joy={joystickInput} active={isJoystickControlling}\n"
+            + $"room  floorReady={roomFloorReady} spawn={roomPlacementState} | object={objectPosition}";
+    }
+
+    // Đọc một lần các thông số dáng tay cần cho kích hoạt, nhả điều khiển và kéo vật thể.
     private bool TryReadHandState(out Vector3 palmPosition)
     {
         palmPosition = Vector3.zero;
@@ -251,7 +385,7 @@ public class PocketControl : MonoBehaviour
         return true;
     }
 
-    // Mo tay on dinh trong mot khoang ngan se dat anchor moi ngay tai long ban tay.
+    // Mở tay ổn định trong một khoảng ngắn sẽ đặt mốc điều khiển mới ngay tại lòng bàn tay.
     private void HandleControlActivation(Vector3 palmPosition)
     {
         if (!isOpenHand)
@@ -290,7 +424,7 @@ public class PocketControl : MonoBehaviour
         UpdateAnchorVisual(anchorPositionWorld, palmPosition, activeColor, true);
     }
 
-    // Doi offset cua tay trong he truc camera thanh van toc cua vat the.
+    // Đổi độ lệch của tay trong hệ trục camera thành vận tốc của vật thể.
     private void MoveFromAnchor(Vector3 palmPosition)
     {
         Vector3 planarHandPosition = new Vector3(
@@ -330,7 +464,7 @@ public class PocketControl : MonoBehaviour
         controlledObject.transform.position = nextPosition;
     }
 
-    // Giu truc dang dung; chi doi truc khi truc moi manh hon theo axisSwitchRatio.
+    // Giữ trục đang dùng; chỉ đổi trục khi trục mới mạnh hơn theo axisSwitchRatio.
     private void SelectDominantAxis(ref float horizontal, ref float depth)
     {
         if (!dominantAxisOnly)
@@ -411,17 +545,18 @@ public class PocketControl : MonoBehaviour
         position.y = controlledHeight;
     }
 
-    // Lay room hien tai va dat vi tri khoi dau cua vat the len mat san da quet.
+    // Lấy phòng hiện tại, sửa vị trí spawn bị kẹt trong nội thất rồi mới lưu mốc di chuyển ban đầu.
     private void RefreshScannedRoomFloor()
     {
         if (!useScannedRoomFloor || MRUK.Instance == null || !MRUK.Instance.IsInitialized)
         {
             roomFloorReady = false;
+            roomPlacementState = "Waiting for MRUK room";
             return;
         }
 
-        // Use the loaded room list instead of the native current-room query.
-        // The native query can be unavailable for one frame while XR is shutting down.
+        // Dùng danh sách phòng đã tải thay cho truy vấn phòng hiện tại ở tầng native.
+        // Truy vấn native có thể tạm thời không khả dụng trong một frame khi XR đang tắt.
         MRUKRoom detectedRoom = MRUK.Instance.Rooms.Count > 0
             ? MRUK.Instance.Rooms[0]
             : null;
@@ -429,19 +564,43 @@ public class PocketControl : MonoBehaviour
         {
             currentRoom = detectedRoom;
             roomFloorInitialized = false;
+            nextSafeSpawnAttemptTime = 0f;
         }
 
         roomFloorReady = currentRoom != null && currentRoom.FloorAnchors.Count > 0;
         if (!roomFloorReady || roomFloorInitialized || controlledObject == null)
         {
+            if (!roomFloorReady)
+            {
+                roomPlacementState = "Floor unavailable";
+            }
+
             return;
         }
 
-        if (!TryProjectPositionToFloor(controlledObject.transform.position, out Vector3 groundedPosition))
+        if (Time.unscaledTime < nextSafeSpawnAttemptTime)
         {
             return;
         }
 
+        Vector3 requestedPosition = controlledObject.transform.position;
+        bool currentPositionIsSafe = TryGetSafeFloorPosition(requestedPosition, out Vector3 groundedPosition);
+        if (!currentPositionIsSafe && relocateInvalidSpawn)
+        {
+            roomPlacementState = "Searching safe floor";
+            currentPositionIsSafe = TryFindNearestSafeFloorPosition(requestedPosition, out groundedPosition);
+        }
+
+        if (!currentPositionIsSafe)
+        {
+            roomPlacementState = relocateInvalidSpawn
+                ? "No safe floor found"
+                : "Initial position blocked";
+            nextSafeSpawnAttemptTime = Time.unscaledTime + 1f;
+            return;
+        }
+
+        bool wasRelocated = Vector3.Distance(requestedPosition, groundedPosition) > 0.05f;
         controlledObject.transform.position = groundedPosition;
         controlledHeight = groundedPosition.y;
         initialPosition = groundedPosition;
@@ -451,9 +610,64 @@ public class PocketControl : MonoBehaviour
         }
 
         roomFloorInitialized = true;
+        roomPlacementState = wasRelocated ? "Relocated safely" : "Valid";
     }
 
-    // Raycast chi vao nhan FLOOR de day vat the luon nam tren san cua room.
+    // Quét các vòng từ gần ra xa để tìm điểm trên FLOOR nằm trong phòng và không chồng lên nội thất đã quét.
+    private bool TryFindNearestSafeFloorPosition(Vector3 origin, out Vector3 safePosition)
+    {
+        safePosition = origin;
+        int ringCount = Mathf.CeilToInt(safeSpawnSearchRadius / safeSpawnRingStep);
+        for (int ring = 1; ring <= ringCount; ring++)
+        {
+            float radius = Mathf.Min(ring * safeSpawnRingStep, safeSpawnSearchRadius);
+            float angleOffset = ring % 2 == 0 ? 0f : Mathf.PI / safeSpawnSamplesPerRing;
+            for (int sample = 0; sample < safeSpawnSamplesPerRing; sample++)
+            {
+                float angle = angleOffset + sample * Mathf.PI * 2f / safeSpawnSamplesPerRing;
+                Vector3 candidate = origin + new Vector3(
+                    Mathf.Cos(angle) * radius,
+                    0f,
+                    Mathf.Sin(angle) * radius);
+                if (TryGetSafeFloorPosition(candidate, out safePosition))
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    // Chiếu một điểm xuống FLOOR rồi loại điểm ngoài phòng, trong scene volume hoặc đè lên collider vật lý.
+    private bool TryGetSafeFloorPosition(Vector3 requestedPosition, out Vector3 safePosition)
+    {
+        if (!TryProjectPositionToFloor(requestedPosition, out safePosition)
+            || !IsValidRoomPosition(safePosition))
+        {
+            return false;
+        }
+
+        float overlapRadius = Mathf.Max(0.02f, objectCollisionRadius * 0.9f);
+        int overlapCount = Physics.OverlapSphereNonAlloc(
+            safePosition,
+            overlapRadius,
+            spawnOverlapResults,
+            safeSpawnCollisionMask,
+            QueryTriggerInteraction.Ignore);
+        for (int i = 0; i < overlapCount; i++)
+        {
+            Collider overlap = spawnOverlapResults[i];
+            if (overlap != null && !overlap.transform.IsChildOf(controlledObject.transform))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    // Chỉ raycast vào nhãn FLOOR để đáy vật thể luôn nằm trên sàn của phòng.
     private bool TryProjectPositionToFloor(Vector3 position, out Vector3 groundedPosition)
     {
         groundedPosition = position;
@@ -503,7 +717,7 @@ public class PocketControl : MonoBehaviour
             || !currentRoom.IsPositionInSceneVolume(position, objectCollisionRadius);
     }
 
-    // Tinh khoang cach tu pivot den day va ban kinh vat the tu collider/renderer.
+    // Tính khoảng cách từ pivot đến đáy và bán kính vật thể từ Collider hoặc Renderer.
     private void CacheControlledObjectDimensions()
     {
         Bounds bounds = new Bounds(
@@ -561,166 +775,12 @@ public class PocketControl : MonoBehaviour
         objectCollisionRadius = Mathf.Max(bounds.extents.x, bounds.extents.z);
     }
 
-    // Khi nam tay, keo vat the ve phia camera nhung dung truoc nguoi choi mot khoang an toan.
-    private void HandleFistPull()
+    // Xóa toàn bộ vận tốc và anchor để nắm tay luôn giữ vật thể đứng yên cho đến khi mở tay prime lại.
+    private void HoldPositionForFist()
     {
-        openPoseSince = -1f;
-        SetAnchorVisualVisible(false);
-
-        if (fistPoseSince < 0f)
-        {
-            fistPoseSince = Time.unscaledTime;
-            return;
-        }
-
-        if (Time.unscaledTime - fistPoseSince < fistPullHoldSeconds)
-        {
-            return;
-        }
-
         ReleaseControl();
-        isPullingTowardPlayer = true;
-        controlState = AnchorControlState.Pulling;
-        PullControlledObjectTowardPlayer();
-    }
-
-    private void PullControlledObjectTowardPlayer()
-    {
-        if (controlledObject == null || !TryGetPlayerPlanarPosition(out Vector3 playerPosition))
-        {
-            isPullingTowardPlayer = false;
-            controlState = AnchorControlState.Idle;
-            return;
-        }
-
-        Transform target = controlledObject.transform;
-        Vector3 toPlayer = playerPosition - target.position;
-        toPlayer.y = 0f;
-        float distanceToPlayer = toPlayer.magnitude;
-        if (distanceToPlayer <= closestDistanceToPlayer)
-        {
-            return;
-        }
-
-        float moveDistance = Mathf.Min(
-            pullSpeed * Time.deltaTime,
-            distanceToPlayer - closestDistanceToPlayer);
-        if (TryFindPullPosition(
-                target.position,
-                toPlayer.normalized,
-                moveDistance,
-                out Vector3 nextPosition))
-        {
-            target.position = nextPosition;
-        }
-    }
-
-    // Thu duong thang truoc; neu bi chan thi tim dan cac huong lech trai va phai.
-    private bool TryFindPullPosition(
-        Vector3 origin,
-        Vector3 desiredDirection,
-        float moveDistance,
-        out Vector3 nextPosition)
-    {
-        if (!avoidObstaclesWhilePulling || !roomFloorReady)
-        {
-            avoidanceSide = 0;
-            return TryCreateValidPullPosition(
-                origin,
-                desiredDirection,
-                moveDistance,
-                out nextPosition);
-        }
-
-        float probeDistance = Mathf.Max(moveDistance, avoidanceLookAhead);
-        if (TryCreateValidPullPosition(
-                origin,
-                desiredDirection,
-                probeDistance,
-                out _))
-        {
-            avoidanceSide = 0;
-            return TryCreateValidPullPosition(
-                origin,
-                desiredDirection,
-                moveDistance,
-                out nextPosition);
-        }
-
-        int preferredSide = avoidanceSide == 0 ? 1 : avoidanceSide;
-        for (int sample = 1; sample <= avoidanceDirectionSamples; sample++)
-        {
-            float angle = maximumAvoidanceAngle * sample / avoidanceDirectionSamples;
-            if (TryAvoidanceSide(preferredSide, angle, out nextPosition)
-                || TryAvoidanceSide(-preferredSide, angle, out nextPosition))
-            {
-                return true;
-            }
-        }
-
-        nextPosition = origin;
-        return false;
-
-        bool TryAvoidanceSide(int side, float angle, out Vector3 candidate)
-        {
-            Vector3 direction = Quaternion.AngleAxis(side * angle, Vector3.up)
-                * desiredDirection;
-            if (!TryCreateValidPullPosition(
-                    origin,
-                    direction,
-                    probeDistance,
-                    out _))
-            {
-                candidate = origin;
-                return false;
-            }
-
-            avoidanceSide = side;
-            return TryCreateValidPullPosition(
-                origin,
-                direction,
-                moveDistance,
-                out candidate);
-        }
-    }
-
-    private bool TryCreateValidPullPosition(
-        Vector3 origin,
-        Vector3 direction,
-        float distance,
-        out Vector3 position)
-    {
-        position = origin + direction * distance;
-        float halfSize = boundsSize * 0.5f;
-        position.x = Mathf.Clamp(position.x, boundsCenter.x - halfSize, boundsCenter.x + halfSize);
-        position.z = Mathf.Clamp(position.z, boundsCenter.z - halfSize, boundsCenter.z + halfSize);
-
-        if (!useScannedRoomFloor || !roomFloorReady)
-        {
-            position.y = controlledHeight;
-            return true;
-        }
-
-        return TryProjectPositionToFloor(position, out position)
-            && IsValidRoomPosition(position);
-    }
-
-    private bool TryGetPlayerPlanarPosition(out Vector3 playerPosition)
-    {
-        if (movementReference == null && Camera.main != null)
-        {
-            movementReference = Camera.main.transform;
-        }
-
-        if (movementReference == null)
-        {
-            playerPosition = Vector3.zero;
-            return false;
-        }
-
-        playerPosition = movementReference.position;
-        playerPosition.y = controlledObject.transform.position.y;
-        return true;
+        isHoldingForFist = true;
+        controlState = AnchorControlState.Holding;
     }
 
     private void ReleaseControl()
@@ -736,18 +796,17 @@ public class PocketControl : MonoBehaviour
         SetAnchorVisualVisible(false);
     }
 
+    // Mất tracking sẽ xóa cả trạng thái giữ do nắm tay để lần nhận tay tiếp theo bắt đầu sạch.
     private void StopControlForTrackingLoss()
     {
         trackingValidSince = -1f;
-        fistPoseSince = -1f;
-        isPullingTowardPlayer = false;
-        avoidanceSide = 0;
+        isHoldingForFist = false;
         isOpenHand = false;
         isFist = false;
         ReleaseControl();
     }
 
-    // Do do thang: khoang cach dau-cuoi chia tong chieu dai cac dot.
+    // Đo độ thẳng: khoảng cách đầu-cuối chia cho tổng chiều dài các đốt.
     private bool TryGetFingerStraightness(FingerBoneIds ids, out float straightness)
     {
         straightness = 0f;
@@ -771,7 +830,7 @@ public class PocketControl : MonoBehaviour
         return true;
     }
 
-    // Tam long ban tay on dinh hon mot joint don le khi tracking co jitter.
+    // Tâm lòng bàn tay ổn định hơn một khớp đơn lẻ khi dữ liệu tracking bị rung.
     private bool TryGetPalmCenter(out Vector3 palmCenter)
     {
         palmCenter = Vector3.zero;
@@ -1021,20 +1080,18 @@ public class PocketControl : MonoBehaviour
     }
 
 #if UNITY_EDITOR
+    // Giới hạn các thông số Inspector để tránh cấu hình âm hoặc ngưỡng gesture mâu thuẫn.
     private void OnValidate()
     {
         deadZoneRadius = Mathf.Max(0.001f, deadZoneRadius);
         fullSpeedRadius = Mathf.Max(deadZoneRadius + 0.001f, fullSpeedRadius);
         movementSmoothTime = Mathf.Max(0f, movementSmoothTime);
         boundsSize = Mathf.Max(0.1f, boundsSize);
-        pullSpeed = Mathf.Max(0f, pullSpeed);
-        closestDistanceToPlayer = Mathf.Max(0.1f, closestDistanceToPlayer);
-        fistPullHoldSeconds = Mathf.Max(0f, fistPullHoldSeconds);
-        avoidanceLookAhead = Mathf.Max(0.05f, avoidanceLookAhead);
-        maximumAvoidanceAngle = Mathf.Clamp(maximumAvoidanceAngle, 15f, 120f);
-        avoidanceDirectionSamples = Mathf.Clamp(avoidanceDirectionSamples, 1, 12);
         floorClearance = Mathf.Max(0f, floorClearance);
         floorRayStartHeight = Mathf.Max(0.1f, floorRayStartHeight);
+        safeSpawnSearchRadius = Mathf.Max(0.1f, safeSpawnSearchRadius);
+        safeSpawnRingStep = Mathf.Clamp(safeSpawnRingStep, 0.05f, safeSpawnSearchRadius);
+        safeSpawnSamplesPerRing = Mathf.Clamp(safeSpawnSamplesPerRing, 8, 64);
         extendedRatio = Mathf.Clamp(extendedRatio, 0.5f, 1f);
         curledRatio = Mathf.Clamp(curledRatio, 0.2f, 0.9f);
         axisSwitchRatio = Mathf.Clamp(axisSwitchRatio, 1f, 2f);
