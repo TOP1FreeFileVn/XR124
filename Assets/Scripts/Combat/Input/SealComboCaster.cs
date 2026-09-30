@@ -98,6 +98,19 @@ namespace XR124.Combat
             QueueSeal(seal);
         }
 
+        // Kết một ấn từ nguồn ngoài (nút kiểm thử trong Editor); đi qua đúng đường xử lý như ấn tay/nút tay cầm.
+        public void SubmitSeal(SealType seal)
+        {
+            QueueSeal(seal);
+        }
+
+        // Tung Ultimate từ nguồn ngoài (nút kiểm thử trong Editor).
+        public void SubmitUltimate()
+        {
+            ClearSequence();
+            CastUltimate();
+        }
+
         // Thêm ấn vào chuỗi và làm mới thời gian chờ.
         private void QueueSeal(SealType seal)
         {

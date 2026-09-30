@@ -28,10 +28,11 @@ namespace XR124.Combat
         private static readonly int DieHash = Animator.StringToHash("Die");
         private static readonly int SummonHash = Animator.StringToHash("Summon");
         private static readonly int LandHash = Animator.StringToHash("Land");
+        private static readonly int DeadHash = Animator.StringToHash("Dead");
 
         private PetCombatant pet;
         private bool animatorResolved;
-        private bool hasSpeed, hasAttack, hasCast, hasUltimate, hasHit, hasDie, hasSummon, hasLand;
+        private bool hasSpeed, hasAttack, hasCast, hasUltimate, hasHit, hasDie, hasSummon, hasLand, hasDead;
 
         public event Action<PetAutoBattler> BasicAttackPerformed;
 
@@ -74,9 +75,11 @@ namespace XR124.Combat
         }
 
         // Phát chuỗi triệu hồi (lấy đà → nhảy → rơi) khi pet nhảy ra từ pháp trận; falling lặp tới khi PlayLanding.
+        // Tắt cờ Dead trước để pet vừa hồi sinh nhận lại các animation đánh/trúng đòn.
         public void PlaySummon()
         {
             EnsureAnimator();
+            SetDead(false);
             Trigger(hasSummon, SummonHash);
         }
 
@@ -241,6 +244,16 @@ namespace XR124.Combat
                 hasDie |= hash == DieHash;
                 hasSummon |= hash == SummonHash;
                 hasLand |= hash == LandHash;
+                hasDead |= hash == DeadHash;
+            }
+        }
+
+        // Bật/tắt cờ Dead trong Animator (chặn các chuyển trạng thái Any State khác khi đã chết).
+        private void SetDead(bool dead)
+        {
+            if (hasDead)
+            {
+                animator.SetBool(DeadHash, dead);
             }
         }
 
@@ -277,10 +290,21 @@ namespace XR124.Combat
             }
         }
 
-        // Bị hạ → animation gục.
+        // Bị hạ → animation gục và nằm yên: bật Dead, xóa các trigger đánh/trúng đòn đang chờ (đòn chí mạng bắn Hit cùng
+        // khung hình với Die) rồi mới bắn Die, để Animator không bị kéo sang Hurt/Attack rồi quay về Idle.
         private void HandleDefeated(PetCombatant target)
         {
+            EnsureAnimator();
             SetSpeed(0f);
+            SetDead(true);
+            if (animator != null && animator.runtimeAnimatorController != null)
+            {
+                if (hasHit) animator.ResetTrigger(HitHash);
+                if (hasAttack) animator.ResetTrigger(AttackHash);
+                if (hasCast) animator.ResetTrigger(CastHash);
+                if (hasUltimate) animator.ResetTrigger(UltimateHash);
+            }
+
             Trigger(hasDie, DieHash);
         }
     }

@@ -14,7 +14,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   petId: PET-003
   displayName: Onea
-  primaryElement: 5
+  primaryElement: 7
   secondaryElement: 255
   canChooseElement: 0
   maxHp: 1500

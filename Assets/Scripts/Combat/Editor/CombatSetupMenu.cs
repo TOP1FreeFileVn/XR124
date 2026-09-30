@@ -68,15 +68,8 @@ namespace XR124.Combat.EditorTools
 
             BattleSummoner summoner = root.AddComponent<BattleSummoner>();
             summoner.Configure(placement, sword, match, caster, player, enemy, playerPortal);
-
-            GameObject debugObject = new GameObject("BattleDebugLabel");
-            debugObject.transform.SetParent(root.transform, false);
-            debugObject.transform.localPosition = new Vector3(0.35f, 1.4f, 0.8f);
-            TextMeshPro debugText = debugObject.AddComponent<TextMeshPro>();
-            debugText.fontSize = 0.25f;
-            debugText.alignment = TextAlignmentOptions.TopLeft;
-            debugText.rectTransform.sizeDelta = new Vector2(0.6f, 0.4f);
-            debugObject.AddComponent<BattleDebugLabel>().Configure(debugText, placement, sword, summoner, caster);
+            // Không tạo chữ debug trước mắt trong VR; trạng thái trận xem ở Console, Performance Monitor Panel
+            // hoặc bảng nút EditorTestPanel khi chạy trong Editor.
 
             EditorSceneManager.MarkSceneDirty(root.scene);
             Selection.activeGameObject = root;
@@ -177,8 +170,116 @@ namespace XR124.Combat.EditorTools
                 }
             }
 
+            // Khi runtime không cấp dữ liệu bàn tay (XR Simulator ở chế độ Controller, runtime không hỗ trợ Capsense) thì phải
+            // hiện lại tay cầm, nếu không người chơi không thấy tay nào: gắn bộ tự chuyển hình tay/tay cầm theo từng bên.
+            if (UnityEngine.Object.FindFirstObjectByType<HandControllerVisualSwitcher>(FindObjectsInactive.Include) == null)
+            {
+                GameObject switcher = new GameObject("HandControllerVisualSwitcher");
+                Undo.RegisterCreatedObjectUndo(switcher, "Add hand/controller visual switcher");
+                switcher.AddComponent<HandControllerVisualSwitcher>();
+            }
+
             EditorSceneManager.MarkSceneDirty(UnityEngine.SceneManagement.SceneManager.GetActiveScene());
-            Debug.Log($"[Combat] Đã ẩn {hidden} hình tay cầm và bật tay điều khiển bằng tay cầm (Natural). Bàn tay luôn hiện để kết ấn.");
+            Debug.Log($"[Combat] Đã ẩn {hidden} hình tay cầm và bật tay điều khiển bằng tay cầm (Natural). Bàn tay hiện khi có dữ liệu tay, không có thì hiện lại tay cầm.");
+        }
+
+        // Hiện model tay cầm Touch thật trong game: tắt Controller Driven Hand Poses (None) để khi cầm tay cầm, rig hiển thị
+        // và tương tác bằng tay cầm (OVRControllerVisual của rig ISDK); bỏ tay cầm xuống thì hand tracking tự hiện bàn tay.
+        // Đồng thời xóa chữ debug trắng (BattleDebugLabel) trước mắt nếu scene còn.
+        [MenuItem("XR124/Combat/Use Controller Models + Remove Debug Text", priority = 106)]
+        public static void UseControllerModels()
+        {
+            OVRManager manager = UnityEngine.Object.FindFirstObjectByType<OVRManager>(FindObjectsInactive.Include);
+            if (manager != null)
+            {
+                Undo.RecordObject(manager, "Controller models");
+                manager.controllerDrivenHandPosesType = OVRManager.ControllerDrivenHandPosesType.None;
+                EditorUtility.SetDirty(manager);
+            }
+
+            int shown = 0;
+            string[] visualNames = { "OVRControllerVisualLeft", "OVRControllerVisualRight", "OVRControllerPrefab" };
+            foreach (Transform t in UnityEngine.Object.FindObjectsByType<Transform>(FindObjectsInactive.Include, FindObjectsSortMode.None))
+            {
+                if (Array.IndexOf(visualNames, t.name) >= 0 && !t.gameObject.activeSelf)
+                {
+                    Undo.RecordObject(t.gameObject, "Show controller visual");
+                    t.gameObject.SetActive(true);
+                    shown++;
+                }
+            }
+
+            int removed = 0;
+            foreach (BattleDebugLabel label in UnityEngine.Object.FindObjectsByType<BattleDebugLabel>(FindObjectsInactive.Include, FindObjectsSortMode.None))
+            {
+                Undo.DestroyObjectImmediate(label.gameObject);
+                removed++;
+            }
+
+            EditorSceneManager.MarkSceneDirty(UnityEngine.SceneManagement.SceneManager.GetActiveScene());
+            Debug.Log($"[Combat] Đã hiện {shown} model tay cầm (Controller Driven Hands = None) và xóa {removed} chữ debug.");
+        }
+
+        private const string BodyAvatarPrefab = "Assets/Samples/Meta XR Movement SDK/205.0.0/Body Tracking Samples/Body/Prefabs/RealisticCharacter.prefab";
+        // Renderer phần đầu của RealisticCharacter: chỉ đổ bóng để camera góc thứ nhất không nhìn thấy lòng đầu/mắt/miệng.
+        private static readonly string[] AvatarHeadRenderers = { "head_ply", "corneaL_geo", "corneaL_geo 1", "mouth_ply" };
+
+        // Gắn nhân vật người full body (Meta Movement SDK: CharacterRetargeter + MetaSourceDataProvider Full Body) theo người
+        // chơi: đặt ở gốc thế giới như scene mẫu MovementBody (retargeter tự bám theo tracking space của OVRCameraRig), ẩn đầu
+        // khỏi camera, và tắt mesh bàn tay cũ của rig để không hiện hai đôi tay (vẫn giữ OVRSkeleton cho nhận diện ấn).
+        [MenuItem("XR124/Combat/Add Full Body Avatar (Movement SDK)", priority = 107)]
+        public static void AddFullBodyAvatar()
+        {
+            GameObject prefab = AssetDatabase.LoadAssetAtPath<GameObject>(BodyAvatarPrefab);
+            if (prefab == null)
+            {
+                Debug.LogError($"[Combat] Không có {BodyAvatarPrefab}. Cài Meta XR Movement SDK 205 và import mẫu Body Tracking Samples trước.");
+                return;
+            }
+
+            GameObject old = GameObject.Find("PlayerBodyAvatar");
+            if (old != null)
+            {
+                Undo.DestroyObjectImmediate(old);
+            }
+
+            GameObject avatar = (GameObject)PrefabUtility.InstantiatePrefab(prefab);
+            Undo.RegisterCreatedObjectUndo(avatar, "Add full body avatar");
+            avatar.name = "PlayerBodyAvatar";
+            avatar.transform.SetPositionAndRotation(Vector3.zero, Quaternion.identity);
+            // Căn đầu theo camera và IK hai tay theo tay cầm/bàn tay sau retargeter, để người luôn đi theo camera rig.
+            avatar.AddComponent<AvatarRigFollower>();
+            // Diễn tư thế ấn (ngón + cánh tay) mỗi khi kết ấn/Ultimate, vì tay cầm và Simulator không tự tạo tư thế ngón.
+            avatar.AddComponent<AvatarSealPoser>();
+
+            int headHidden = 0;
+            foreach (Renderer renderer in avatar.GetComponentsInChildren<Renderer>(true))
+            {
+                if (Array.IndexOf(AvatarHeadRenderers, renderer.name) >= 0)
+                {
+                    renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.ShadowsOnly;
+                    headHidden++;
+                }
+            }
+
+            // Mesh bàn tay cũ: building block Hand Tracking (OVRMeshRenderer) và bàn tay ISDK (OculusHand) trong OVRCameraRig.
+            int handsHidden = 0;
+            OVRCameraRig rig = UnityEngine.Object.FindFirstObjectByType<OVRCameraRig>(FindObjectsInactive.Include);
+            foreach (SkinnedMeshRenderer hand in UnityEngine.Object.FindObjectsByType<SkinnedMeshRenderer>(FindObjectsInactive.Include, FindObjectsSortMode.None))
+            {
+                bool inRig = rig != null && hand.transform.IsChildOf(rig.transform.root);
+                bool isHandMesh = hand.GetComponentInParent<OVRSkeleton>() != null || hand.name == "LeftHand" || hand.name == "RightHand";
+                if (inRig && isHandMesh && !hand.transform.IsChildOf(avatar.transform) && hand.enabled)
+                {
+                    Undo.RecordObject(hand, "Hide rig hand mesh");
+                    hand.enabled = false;
+                    handsHidden++;
+                }
+            }
+
+            EditorSceneManager.MarkSceneDirty(avatar.scene);
+            Debug.Log($"[Combat] Đã thêm nhân vật full body (ẩn {headHidden} phần đầu khỏi camera, tắt {handsHidden} mesh bàn tay cũ). " +
+                      "Cần cho phép Body Tracking trên kính; trong XR Simulator phần thân trên sẽ cử động.");
         }
 
         private const string ArenaModelPath = "Assets/Art/Arena/Arena.fbx";

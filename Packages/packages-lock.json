@@ -79,6 +79,17 @@
       },
       "url": "https://packages.unity.com"
     },
+    "com.meta.xr.sdk.movement": {
+      "version": "https://github.com/oculus-samples/Unity-Movement.git#v205.0.0",
+      "depth": 0,
+      "source": "git",
+      "dependencies": {
+        "com.unity.burst": "1.8.18",
+        "com.unity.textmeshpro": "3.0.6",
+        "com.unity.ugui": "1.0.0"
+      },
+      "hash": "89e2f441746f0bedea7c70cc21dd330f65a9d221"
+    },
     "com.meta.xr.sdk.platform": {
       "version": "205.0.0",
       "depth": 1,
@@ -355,7 +366,7 @@
     },
     "com.unity.textmeshpro": {
       "version": "5.0.0",
-      "depth": 2,
+      "depth": 1,
       "source": "builtin",
       "dependencies": {
         "com.unity.ugui": "2.0.0"

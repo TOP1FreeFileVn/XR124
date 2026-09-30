@@ -433,6 +433,8 @@ namespace XR124.Combat.EditorTools
             controller.AddParameter("Die", AnimatorControllerParameterType.Trigger);
             controller.AddParameter("Summon", AnimatorControllerParameterType.Trigger);
             controller.AddParameter("Land", AnimatorControllerParameterType.Trigger);
+            // Cờ đã chết: chặn mọi chuyển trạng thái Any State khác để Death là trạng thái cuối (không bị Hit/Attack kéo về Idle).
+            controller.AddParameter("Dead", AnimatorControllerParameterType.Bool);
 
             AnimatorStateMachine sm = controller.layers[0].stateMachine;
             AnimatorState idle = AddState(sm, "Idle", clips, "idle", new Vector3(300, 0));
@@ -455,13 +457,14 @@ namespace XR124.Combat.EditorTools
             AddCondition(walk, run, AnimatorConditionMode.Greater, "Speed", 1.2f);
             AddCondition(run, walk, AnimatorConditionMode.Less, "Speed", 1.2f);
 
-            // Hành động một lần: vào từ Any State bằng trigger, chạy hết clip rồi về Idle.
-            AddAnyTrigger(sm, attack, "Attack");
-            AddAnyTrigger(sm, attack, "Cast");
-            AddAnyTrigger(sm, hurt, "Hit");
-            AddAnyTrigger(sm, ultimate, "Ultimate");
-            AddAnyTrigger(sm, death, "Die");
-            AddAnyTrigger(sm, summonStart, "Summon");
+            // Hành động một lần: vào từ Any State bằng trigger, chạy hết clip rồi về Idle. Khi Dead = true chỉ còn Summon
+            // (PetAutoBattler tắt Dead trước khi triệu hồi lại); Death không có đường ra nên pet nằm gục tới hết trận.
+            AddAnyTrigger(sm, attack, "Attack", true);
+            AddAnyTrigger(sm, attack, "Cast", true);
+            AddAnyTrigger(sm, hurt, "Hit", true);
+            AddAnyTrigger(sm, ultimate, "Ultimate", true);
+            AddAnyTrigger(sm, death, "Die", false);
+            AddAnyTrigger(sm, summonStart, "Summon", false);
             AddExit(attack, idle);
             AddExit(hurt, idle);
             AddExit(ultimate, idle);
@@ -522,13 +525,18 @@ namespace XR124.Combat.EditorTools
         }
 
         // Chuyển từ Any State bằng trigger; không cho tự chuyển về chính nó để trigger lặp không giật animation.
-        private static void AddAnyTrigger(AnimatorStateMachine sm, AnimatorState to, string trigger)
+        // Chuyển từ Any State bằng trigger; requireAlive = true thì thêm điều kiện Dead == false để không kéo pet ra khỏi Death.
+        private static void AddAnyTrigger(AnimatorStateMachine sm, AnimatorState to, string trigger, bool requireAlive)
         {
             AnimatorStateTransition t = sm.AddAnyStateTransition(to);
             t.hasExitTime = false;
             t.duration = 0.1f;
             t.canTransitionToSelf = false;
             t.AddCondition(AnimatorConditionMode.If, 0f, trigger);
+            if (requireAlive)
+            {
+                t.AddCondition(AnimatorConditionMode.IfNot, 0f, "Dead");
+            }
         }
 
         // Chuyển tiếp khi clip chạy xong (exit time gần 1).

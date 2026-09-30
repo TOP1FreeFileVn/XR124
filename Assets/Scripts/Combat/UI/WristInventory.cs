@@ -5,8 +5,8 @@ using UnityEngine.UI;
 namespace XR124.Combat
 {
     // Túi đồ dạng đồng hồ trên cổ tay trái. Mở/đóng bằng cách chạm tay phải vào mặt đồng hồ hoặc bấm cần analog trái.
-    // Bảng túi đồ hiện phía trên đồng hồ, quay về mặt người chơi, bấm bằng tia (ISDK Ray Canvas) từ tay cầm/tay phải.
-    // Ô Katana: EQUIP lấy kiếm ra lơ lửng trước ngực để cầm; STORE cất kiếm vào túi (chỉ khi kiếm đang nghỉ).
+    // Bảng túi đồ bám theo đồng hồ (phía trên cổ tay), luôn quay về mặt người chơi, bấm bằng tia (ISDK Ray Canvas) từ
+    // tay cầm/tay phải. Ô Katana: EQUIP gắn kiếm thẳng vào tay phải; STORE cất kiếm; PULL rút kiếm đang cắm về tay.
     public sealed class WristInventory : MonoBehaviour
     {
         [Header("Tham chiếu")]
@@ -32,14 +32,10 @@ namespace XR124.Combat
         [Min(0.01f)] [SerializeField] private float tapRadius = 0.06f;
         [Min(0f)] [SerializeField] private float toggleCooldown = 0.6f;
         [SerializeField] private bool thumbstickToggle = true;
-        [Tooltip("Bảng hiện cao hơn đồng hồ đoạn này (m) và lùi về phía mặt người chơi.")]
+        [Tooltip("Bảng hiện cao hơn đồng hồ đoạn này (m); bám theo đồng hồ mỗi khung hình khi đang mở.")]
         [SerializeField] private Vector3 panelOffset = new Vector3(0f, 0.16f, 0f);
-
-        [Header("Lấy kiếm ra")]
-        [Tooltip("Kiếm hiện trước mặt người chơi: khoảng cách ra trước và hạ thấp so với mắt (m).")]
-        [SerializeField] private float swordForward = 0.35f;
-        [SerializeField] private float swordBelowEyes = 0.35f;
-        [SerializeField] private float minSwordHeight = 0.7f;
+        [Tooltip("Độ mượt khi bảng bám theo tay (càng lớn càng bám sát, 0 = dính cứng).")]
+        [Min(0f)] [SerializeField] private float panelFollowSharpness = 18f;
 
         [Header("Runtime (chỉ đọc)")]
         [SerializeField] private bool isOpen;
@@ -148,8 +144,36 @@ namespace XR124.Combat
 
             if (isOpen)
             {
+                PositionPanel(false);
                 RefreshSwordSlot();
             }
+        }
+
+        // Đặt bảng phía trên đồng hồ và quay mặt về người chơi. snap = true: đặt ngay (lúc mở); false: bám mượt theo tay
+        // để bảng đi cùng cổ tay mà không rung theo từng rung động nhỏ của tracking.
+        private void PositionPanel(bool snap)
+        {
+            if (panel == null || watchFace == null)
+            {
+                return;
+            }
+
+            Vector3 targetPosition = watchFace.position + panelOffset;
+            Quaternion targetRotation = panel.transform.rotation;
+            if (head != null)
+            {
+                Vector3 away = targetPosition - head.position;
+                away.y = 0f;
+                if (away.sqrMagnitude > 0.0001f)
+                {
+                    targetRotation = Quaternion.LookRotation(away, Vector3.up);
+                }
+            }
+
+            float blend = snap || panelFollowSharpness <= 0f ? 1f : 1f - Mathf.Exp(-panelFollowSharpness * Time.deltaTime);
+            panel.transform.SetPositionAndRotation(
+                Vector3.Lerp(panel.transform.position, targetPosition, blend),
+                Quaternion.Slerp(panel.transform.rotation, targetRotation, blend));
         }
 
         // Tay trái đang hand tracking: đặt mặt đồng hồ lên mu cổ tay (ngược hướng lòng bàn tay), mặt đồng hồ quay ra ngoài.
@@ -186,7 +210,7 @@ namespace XR124.Combat
             SetOpen(!isOpen);
         }
 
-        // Mở: đặt bảng phía trên đồng hồ và quay về phía mặt người chơi (đứng yên trong thế giới để dễ bấm). Đóng: ẩn bảng.
+        // Mở: đặt ngay bảng phía trên đồng hồ (sau đó bảng bám theo tay trong Update). Đóng: ẩn bảng.
         public void SetOpen(bool open)
         {
             isOpen = open;
@@ -195,27 +219,16 @@ namespace XR124.Combat
                 return;
             }
 
-            if (open && watchFace != null)
+            if (open)
             {
-                Vector3 position = watchFace.position + panelOffset;
-                panel.transform.position = position;
-                if (head != null)
-                {
-                    Vector3 away = position - head.position;
-                    away.y = 0f;
-                    if (away.sqrMagnitude > 0.0001f)
-                    {
-                        panel.transform.rotation = Quaternion.LookRotation(away, Vector3.up);
-                    }
-                }
-
+                PositionPanel(true);
                 RefreshSwordSlot();
             }
 
             panel.SetActive(open);
         }
 
-        // Nút Katana: đang trong túi thì lấy ra trước ngực, đang nghỉ ngoài túi thì cất vào.
+        // Nút Katana: trong túi hoặc đang cắm → gắn kiếm vào tay phải (EQUIP/PULL); đang trong tay → cất vào túi (STORE).
         public void ToggleSword()
         {
             if (sword == null)
@@ -223,18 +236,11 @@ namespace XR124.Combat
                 return;
             }
 
-            if (sword.IsStored)
+            if (sword.IsStored || sword.State == SummonSword.SwordState.Planted)
             {
-                Transform view = head != null ? head : transform;
-                Vector3 forward = Vector3.ProjectOnPlane(view.forward, Vector3.up);
-                forward = forward.sqrMagnitude > 0.0001f ? forward.normalized : Vector3.forward;
-                Vector3 position = view.position + forward * swordForward + Vector3.down * swordBelowEyes;
-                // Không để kiếm hiện dưới sàn khi đầu thấp/chưa tracking (sàn đấu trường ở y = 0).
-                position.y = Mathf.Max(position.y, minSwordHeight);
-                // Kiếm dựng đứng, chuôi hướng lên, lưỡi quay theo hướng nhìn để dễ nắm.
-                sword.TakeOut(position, Quaternion.LookRotation(forward, Vector3.up));
+                sword.EquipToHand();
             }
-            else
+            else if (sword.CanStore)
             {
                 sword.Store();
             }
@@ -242,7 +248,8 @@ namespace XR124.Combat
             RefreshSwordSlot();
         }
 
-        // Cập nhật chữ trạng thái và nút theo tình trạng kiếm (chữ ASCII vì font TMP mặc định thiếu dấu tiếng Việt).
+        // Cập nhật chữ trạng thái và nút theo tình trạng kiếm: trong túi → EQUIP, đang cắm → PULL, trong tay → STORE
+        // (chữ ASCII vì font TMP mặc định thiếu dấu tiếng Việt).
         private void RefreshSwordSlot()
         {
             if (sword == null)
@@ -258,14 +265,20 @@ namespace XR124.Combat
                 status = "In bag";
                 action = "EQUIP";
             }
+            else if (sword.State == SummonSword.SwordState.Planted)
+            {
+                status = "Planted";
+                action = "PULL";
+            }
             else if (sword.CanStore)
             {
-                status = "Equipped";
+                status = "In hand";
                 action = "STORE";
             }
             else
             {
-                status = sword.State == SummonSword.SwordState.Planted ? "Planted" : "In hand";
+                // Đang bị nắm bằng Interaction SDK: đợi thả tay (kiếm tự về tay phải) rồi mới cất được.
+                status = "Grabbed";
                 action = "STORE";
                 interactable = false;
             }

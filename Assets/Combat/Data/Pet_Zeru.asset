@@ -14,7 +14,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   petId: PET-002
   displayName: Zeru
-  primaryElement: 1
+  primaryElement: 7
   secondaryElement: 255
   canChooseElement: 1
   maxHp: 1350

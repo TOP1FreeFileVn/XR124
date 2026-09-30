@@ -43,8 +43,8 @@ Vào game ─► Quái địch tự xuất hiện (đứng chờ cách bạn ~3 
 
 | Pet | Vai trò | Hệ | HP | ATK | DEF | SPD | Tầm đánh | Ultimate |
 |---|---|---|---|---|---|---|---|---|
-| **Zeru** | Pet người chơi | Cỏ (chọn được hệ trước trận) | 1350 | 150 | 100 | 105 | 1.5 m | 17 năng lượng |
-| **Onea** | Quái AI mặc định | Đất | 1500 | 140 | 110 | 95 | 1.2 m | 15 năng lượng |
+| **Zeru** | Pet người chơi | Thần thoại (chọn được hệ trước trận) | 1350 | 150 | 100 | 105 | 1.5 m | 17 năng lượng |
+| **Onea** | Quái AI mặc định | Thần thoại | 1500 | 140 | 110 | 95 | 1.2 m | 15 năng lượng |
 | **Tiwo** | Rồng lửa (model mới) | Lửa | 1280 | 165 | 88 | 115 | 1.8 m | 9 năng lượng |
 
 **Kỹ năng riêng** (Skill = combo A‑D‑H):
