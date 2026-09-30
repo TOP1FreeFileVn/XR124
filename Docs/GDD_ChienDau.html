@@ -1,0 +1,269 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<title>GDD – Cơ chế chiến đấu Pet</title>
+<style>
+  @page { size: A4; margin: 16mm 15mm 18mm 15mm; }
+  :root { --ink:#1d2330; --muted:#5b6475; --line:#d9dde5; --accent:#c0392b; --soft:#f5f6f9; --good:#1e7e4a; --goodbg:#e3f4ea; --bad:#b03a2e; --badbg:#fbe5e2; --note:#fff6db; --notel:#e0b200; --prop:#e8f0fe; --propl:#3b6fd8; }
+  * { box-sizing:border-box; }
+  body { font-family:"Segoe UI", "Segoe UI Variable", Arial, sans-serif; color:var(--ink); font-size:10.5pt; line-height:1.5; margin:0; }
+  h1 { font-size:24pt; margin:0 0 4px; letter-spacing:-.3px; }
+  h2 { font-size:15pt; margin:22px 0 8px; padding-bottom:4px; border-bottom:2px solid var(--accent); break-after:avoid; }
+  h3 { font-size:12pt; margin:14px 0 6px; break-after:avoid; }
+  p { margin:4px 0 8px; }
+  ul { margin:4px 0 8px; padding-left:20px; } li { margin:2px 0; }
+  table { width:100%; border-collapse:collapse; margin:6px 0 10px; font-size:9.5pt; break-inside:auto; }
+  tr { break-inside:avoid; }
+  th, td { border:1px solid var(--line); padding:4px 6px; vertical-align:top; text-align:left; }
+  th { background:var(--soft); font-weight:600; }
+  .num { text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; }
+  .c { text-align:center; }
+  .cover { height:250mm; display:flex; flex-direction:column; justify-content:center; break-after:page; }
+  .cover .tag { color:var(--accent); font-weight:700; letter-spacing:2px; font-size:10pt; }
+  .cover .sub { font-size:13pt; color:var(--muted); margin-bottom:24px; }
+  .meta td { border:none; padding:2px 12px 2px 0; font-size:10.5pt; } .meta td:first-child { color:var(--muted); width:150px; }
+  .box { border-left:4px solid var(--notel); background:var(--note); padding:6px 10px; margin:8px 0; break-inside:avoid; }
+  .prop { border-left:4px solid var(--propl); background:var(--prop); padding:6px 10px; margin:8px 0; break-inside:avoid; }
+  .badge { display:inline-block; font-size:8pt; font-weight:700; padding:0 5px; border-radius:3px; background:var(--prop); color:var(--propl); border:1px solid var(--propl); vertical-align:1px; }
+  .formula { font-family:Consolas, "Cascadia Mono", monospace; background:var(--soft); border:1px solid var(--line); padding:8px 10px; font-size:9.5pt; white-space:pre-wrap; margin:6px 0 10px; break-inside:avoid; }
+  .g { background:var(--goodbg); color:var(--good); font-weight:600; } .r { background:var(--badbg); color:var(--bad); font-weight:600; }
+  .toc li { margin:3px 0; }
+  .pb { break-before:page; }
+  .small { font-size:9pt; color:var(--muted); }
+</style>
+</head>
+<body>
+
+<section class="cover">
+  <div class="tag">GAME DESIGN DOCUMENT · XR124</div>
+  <h1>Cơ chế chiến đấu Pet</h1>
+  <div class="sub">Hệ thống Orb – AP – Energy, tương khắc nguyên tố và bộ kỹ năng Zeru, Onea, Tiwo</div>
+  <table class="meta">
+    <tr><td>Phiên bản</td><td>1.1 (bản hợp nhất và sửa mâu thuẫn)</td></tr>
+    <tr><td>Ngày</td><td>29/09/2026</td></tr>
+    <tr><td>Nguồn</td><td>Google Sheet "Combat / Zeru / Onea / Tiwo / Type / Cơ chế chiến đấu" (19/09/2026)</td></tr>
+    <tr><td>Nền tảng</td><td>Meta Quest, Virtual Reality – đấu trường ảo, hand tracking (Unity)</td></tr>
+  </table>
+  <div class="box" style="margin-top:28px">
+    <b>Cách đọc tài liệu:</b> nội dung lấy từ các tab gốc được giữ nguyên ý. Những phần sheet chưa định nghĩa đã được bổ sung và đánh dấu <span class="badge">ĐỀ XUẤT</span>. Mục 9 liệt kê mọi mâu thuẫn đã tìm thấy và cách xử lý.
+  </div>
+  <h3 style="margin-top:22px">Mục lục</h3>
+  <ol class="toc">
+    <li>Tổng quan trận đấu</li>
+    <li>Tài nguyên: AP, Energy, hồi chiêu</li>
+    <li>Orb và bảng phối hợp</li>
+    <li>Công thức sát thương</li>
+    <li>Tương khắc nguyên tố</li>
+    <li>Hiệu ứng nguyên tố và trạng thái</li>
+    <li>Hồ sơ Pet: Zeru, Onea, Tiwo</li>
+    <li>Tham số cân bằng cần playtest</li>
+    <li>Nhật ký mâu thuẫn và cách xử lý</li>
+    <li>Phụ lục: nội dung ngoài phạm vi combat</li>
+  </ol>
+</section>
+
+<h2>1. Tổng quan trận đấu</h2>
+<ul>
+  <li>Trận đấu diễn ra <b>thời gian thực</b>. Chế độ cơ bản là <b>1 đấu 1</b> giữa hai pet. Mọi hiệu ứng là đơn mục tiêu trừ khi ghi rõ là diện rộng. <span class="badge">ĐỀ XUẤT</span></li>
+  <li>Người chơi điều khiển pet bằng các <b>hành động Orb</b>: dùng một orb đơn hoặc ghép nhiều orb thành combo. Mỗi hành động tốn AP.</li>
+  <li>AP đã tiêu được chuyển thành <b>Energy</b>. Đủ Energy thì dùng được <b>Ultimate</b> của pet.</li>
+  <li>Pet có HP về 0 là thua.</li>
+</ul>
+
+<h2>2. Tài nguyên: AP, Energy, hồi chiêu</h2>
+<table>
+  <tr><th style="width:22%">Tài nguyên</th><th>Quy tắc</th></tr>
+  <tr><td><b>AP</b> (Action Point)</td><td>Bắt đầu trận với 20 AP, tối đa 20. Hồi 1 AP mỗi 2 giây. AP vẫn hồi khi pet bị choáng.</td></tr>
+  <tr><td><b>Energy (E)</b></td><td>Tiêu 1 AP thì được +1 E. AP hồi lại (tự hồi hoặc từ H-H) <b>không</b> tạo Energy. Energy tối đa bằng chi phí Ultimate × số lần tích trữ Ultimate (thường là 1). Dùng Ultimate tốn Energy, không tốn AP. <span class="badge">ĐỀ XUẤT</span></td></tr>
+  <tr><td><b>Hồi chiêu</b></td><td>Mỗi hành động trong bảng Orb có <b>đồng hồ hồi chiêu riêng</b>. Ví dụ, dùng A-D thì chỉ A-D bị khóa 5 giây; A và D đơn vẫn dùng được nếu đủ AP. <span class="badge">ĐỀ XUẤT</span></td></tr>
+  <tr><td><b>Giảm hồi chiêu</b></td><td>Các hiệu ứng "giảm X% thời gian hồi" áp dụng lúc hồi chiêu bắt đầu: hồi chiêu = gốc × (1 − X). Các nguồn giảm cộng dồn, tối đa 75%. Đồng hồ đang chạy không bị đổi. <span class="badge">ĐỀ XUẤT</span></td></tr>
+  <tr><td><b>Ultimate</b></td><td>Không có hồi chiêu riêng. Điều kiện duy nhất là đủ Energy.</td></tr>
+</table>
+
+<h2>3. Orb và bảng phối hợp</h2>
+<p>Có 3 orb: <b>A</b> (Attack – tấn công), <b>D</b> (Defense – phòng thủ), <b>H</b> (Heal – hồi phục).</p>
+<table>
+  <tr><th style="width:11%">Hành động</th><th>Hiệu ứng</th><th class="c" style="width:9%">Hồi chiêu</th><th class="c" style="width:12%">AP / +E</th><th style="width:20%">Ghi chú</th></tr>
+  <tr><td><b>A</b></td><td>Gây sát thương 50% ATK.</td><td class="c">3s</td><td class="c">1 / +1</td><td></td></tr>
+  <tr><td><b>D</b></td><td>Giảm 10% sát thương nhận vào trong 1.5s.</td><td class="c">3s</td><td class="c">1 / +1</td><td>Cộng dồn (mục 6.3)</td></tr>
+  <tr><td><b>H</b></td><td>Hồi 15% HP tối đa.</td><td class="c">3s</td><td class="c">1 / +1</td><td></td></tr>
+  <tr><td><b>A-D</b></td><td>Gây sát thương 75% ATK, 50% sát thương gây ra thành khiên (tồn tại 5s).</td><td class="c">5s</td><td class="c">4 / +4</td><td>Khiên cộng dồn</td></tr>
+  <tr><td><b>A-H</b></td><td>Gây sát thương 75% ATK, hồi HP bằng 50% sát thương gây ra.</td><td class="c">5s</td><td class="c">4 / +4</td><td></td></tr>
+  <tr><td><b>D-H</b></td><td>Tạo khiên bằng 25% HP tối đa (tồn tại 5s).</td><td class="c">5s</td><td class="c">4 / +4</td><td>Khiên cộng dồn</td></tr>
+  <tr><td><b>A-A</b></td><td>Gây sát thương 100% ATK và gây hiệu ứng nguyên tố của hệ chính (mục 6).</td><td class="c">5s</td><td class="c">4 / +4</td><td>Nguồn duy nhất gây hiệu ứng hệ, trừ kỹ năng riêng của pet</td></tr>
+  <tr><td><b>D-D</b></td><td>Giảm 25% sát thương nhận vào trong 2s.</td><td class="c">5s</td><td class="c">4 / +4</td><td>Cộng dồn</td></tr>
+  <tr><td><b>H-H</b></td><td>Hồi 25% HP tối đa và 2 AP (không vượt quá 20).</td><td class="c">5s</td><td class="c">4 / +4</td><td>AP hồi lại không tạo E</td></tr>
+  <tr><td><b>A-D-H</b></td><td>Dùng <b>Skill</b> riêng của pet (mục 7).</td><td class="c">10s</td><td class="c">9 / +9</td><td></td></tr>
+</table>
+<div class="prop"><b>Quy ước bổ sung:</b> "sát thương gây ra" trong A-D và A-H là sát thương cuối cùng sau mọi hệ số (tương khắc, DEF, giảm sát thương), bao gồm cả phần bị khiên của đối thủ hấp thụ. Hồi máu và khiên không chịu ảnh hưởng của hệ số tương khắc.</div>
+
+<h2 class="pb">4. Công thức sát thương <span class="badge">ĐỀ XUẤT</span></h2>
+<p>Sheet chưa có công thức DEF, nên tài liệu đề xuất công thức dưới đây. Công thức có một hằng số K để dễ chỉnh cân bằng.</p>
+<div class="formula">Sát thương = ATK_hiệu_lực × Hệ_số_kỹ_năng × Hệ_số_hệ × Hệ_số_DEF × (1 + Tăng_ST_gây_ra) × (1 + Tăng_ST_phải_chịu) × (1 − Giảm_ST_nhận)
+
+ATK_hiệu_lực    = ATK gốc × (1 + tổng buff ATK − tổng debuff ATK)
+Hệ_số_hệ        = bảng mục 5 (hệ chính người đánh → mỗi hệ của người nhận, nhân lại)
+DEF_hiệu_lực    = DEF × (1 − debuff DEF) × (1 − xuyên giáp)
+Hệ_số_DEF       = K / (K + DEF_hiệu_lực),   K = 300
+Giảm_ST_nhận    = tổng các nguồn giảm sát thương, tối đa 60%
+</div>
+<ul>
+  <li><b>Thứ tự trừ máu:</b> sát thương trừ vào khiên trước (khiên sắp hết hạn bị trừ trước), phần dư mới trừ vào HP.</li>
+  <li><b>Sát thương thiêu đốt</b> là <b>sát thương chuẩn</b>: bỏ qua DEF và hệ số hệ, nhưng vẫn chịu Tăng/Giảm sát thương và vẫn bị khiên hấp thụ.</li>
+  <li>Kết quả làm tròn tới số nguyên gần nhất, tối thiểu 1.</li>
+</ul>
+<h3>Ví dụ tính (Tiwo đánh Zeru hệ Cây)</h3>
+<table>
+  <tr><th>Tình huống</th><th>Phép tính</th><th class="num">Kết quả</th></tr>
+  <tr><td>A-A, Zeru chưa bị thiêu đốt</td><td>165 × 1.00 × 1.25 × 300/(300+100)</td><td class="num">155</td></tr>
+  <tr><td>Thiêu đốt từ A-A (5s)</td><td>3% × 1 350 HP × 5 giây</td><td class="num">203</td></tr>
+  <tr><td>A khi Zeru đang cháy (passive Tiwo)</td><td>165 × 0.5 × 1.25 × 300/(300+70) × 1.20</td><td class="num">100</td></tr>
+  <tr><td>Skill kích nổ, còn 3s cháy, 1 tầng</td><td>40.5 × 3 × 1.20</td><td class="num">146</td></tr>
+</table>
+
+<h2>5. Tương khắc nguyên tố</h2>
+<p>Có 8 hệ. Hàng là <b>hệ tấn công</b> (hệ chính của pet tấn công), cột là <b>hệ phòng thủ</b>. Nếu người nhận có 2 hệ thì nhân hai hệ số với nhau.</p>
+<table>
+  <tr><th>Công \ Thủ</th><th class="c">Lửa</th><th class="c">Cây</th><th class="c">Nước</th><th class="c">Điện</th><th class="c">Băng</th><th class="c">Đất</th><th class="c">Thường</th><th class="c">Thần thoại</th></tr>
+  <tr><th>Lửa</th><td class="c">1</td><td class="c g">1.25</td><td class="c r">0.75</td><td class="c">1</td><td class="c g">1.25</td><td class="c r">0.75</td><td class="c">1</td><td class="c">1</td></tr>
+  <tr><th>Cây</th><td class="c r">0.75</td><td class="c">1</td><td class="c g">1.25</td><td class="c">1</td><td class="c r">0.75</td><td class="c g">1.25</td><td class="c">1</td><td class="c">1</td></tr>
+  <tr><th>Nước</th><td class="c g">1.25</td><td class="c r">0.75</td><td class="c">1</td><td class="c r">0.75</td><td class="c">1</td><td class="c g">1.25</td><td class="c">1</td><td class="c">1</td></tr>
+  <tr><th>Điện</th><td class="c">1</td><td class="c">1</td><td class="c g">1.25</td><td class="c">1</td><td class="c">1</td><td class="c r">0.75</td><td class="c">1</td><td class="c">1</td></tr>
+  <tr><th>Băng</th><td class="c r">0.75</td><td class="c g">1.25</td><td class="c">1</td><td class="c">1</td><td class="c">1</td><td class="c">1</td><td class="c">1</td><td class="c">1</td></tr>
+  <tr><th>Đất</th><td class="c g">1.25</td><td class="c r">0.75</td><td class="c r">0.75</td><td class="c g">1.25</td><td class="c">1</td><td class="c">1</td><td class="c">1</td><td class="c">1</td></tr>
+  <tr><th>Thường</th><td class="c">1</td><td class="c">1</td><td class="c">1</td><td class="c">1</td><td class="c">1</td><td class="c">1</td><td class="c r">0.75</td><td class="c">1</td></tr>
+  <tr><th>Thần thoại</th><td class="c">1</td><td class="c">1</td><td class="c">1</td><td class="c">1</td><td class="c">1</td><td class="c">1</td><td class="c">1</td><td class="c g">1.25</td></tr>
+</table>
+<p class="small">Hệ số tương khắc áp dụng cho sát thương từ orb, Skill và Ultimate. Nó không áp dụng cho thiêu đốt, hồi máu và khiên.</p>
+<h3>Phân tích cân bằng (đã sửa lại cột Net)</h3>
+<table>
+  <tr><th>Hệ</th><th class="c">Khắc được</th><th class="c">Bị kháng bởi</th><th class="c">Net</th><th class="num">Hệ số công TB</th><th>Nhận xét</th></tr>
+  <tr><td>Lửa</td><td class="c">2 (Cây, Băng)</td><td class="c">2 (Nước, Đất)</td><td class="c">0</td><td class="num">1.00</td><td rowspan="4">Nhóm Tự nhiên: vòng khắc chế khép kín, cân bằng.</td></tr>
+  <tr><td>Cây</td><td class="c">2 (Nước, Đất)</td><td class="c">2 (Lửa, Băng)</td><td class="c">0</td><td class="num">1.00</td></tr>
+  <tr><td>Nước</td><td class="c">2 (Lửa, Đất)</td><td class="c">2 (Cây, Điện)</td><td class="c">0</td><td class="num">1.00</td></tr>
+  <tr><td>Đất</td><td class="c">2 (Lửa, Điện)</td><td class="c">2 (Cây, Nước)</td><td class="c">0</td><td class="num">1.00</td></tr>
+  <tr><td>Băng</td><td class="c">1 (Cây)</td><td class="c">1 (Lửa)</td><td class="c">0</td><td class="num">1.00</td><td rowspan="2">Ít tương tác hơn, bù lại có hiệu ứng khống chế.</td></tr>
+  <tr><td>Điện</td><td class="c">1 (Nước)</td><td class="c">1 (Đất)</td><td class="c">0</td><td class="num">1.00</td></tr>
+  <tr><td>Thường</td><td class="c">0</td><td class="c">1 (Thường)</td><td class="c r">−1</td><td class="num">0.97</td><td>Yếu nhất về hệ số, hợp với pet phổ thông.</td></tr>
+  <tr><td>Thần thoại</td><td class="c">1 (Thần thoại)</td><td class="c">0</td><td class="c g">+1</td><td class="num">1.03</td><td>Mạnh nhất về hệ số, dành cho pet hiếm hoặc boss.</td></tr>
+</table>
+
+<h2 class="pb">6. Hiệu ứng nguyên tố và trạng thái</h2>
+<h3>6.1 Hiệu ứng hệ (gây bởi A-A)</h3>
+<table>
+  <tr><th style="width:13%">Hệ</th><th style="width:14%">Tên</th><th>Hiệu ứng</th><th style="width:27%">Quy tắc bổ sung <span class="badge">ĐỀ XUẤT</span></th></tr>
+  <tr><td>Lửa</td><td>Thiêu đốt</td><td>Mục tiêu mất 3% HP tối đa mỗi giây trong 5s.</td><td>Sát thương chuẩn, mỗi 1s một nhịp. Chi tiết cộng dồn ở mục 6.2.</td></tr>
+  <tr><td>Cây</td><td>Sinh sôi</td><td>Bản thân +15% ATK trong 10s.</td><td>Buff lên chính mình.</td></tr>
+  <tr><td>Nước</td><td>Bào mòn</td><td>Mục tiêu chịu thêm 10% sát thương trong 10s.</td><td>Tính vào "Tăng_ST_phải_chịu".</td></tr>
+  <tr><td>Đất</td><td>Bão cát</td><td>Mục tiêu −15% DEF trong 10s.</td><td></td></tr>
+  <tr><td>Băng</td><td>Tê cóng</td><td>Mục tiêu −10% tốc độ di chuyển trong 5s.</td><td></td></tr>
+  <tr><td>Điện</td><td>Choáng</td><td>Mục tiêu bất động 3s: không di chuyển, không dùng orb, Skill hay Ultimate.</td><td>Sau khi hết choáng, mục tiêu <b>miễn choáng 5s</b> để tránh bị khóa liên tục.</td></tr>
+  <tr><td>Thường</td><td>Cân bằng</td><td>Lấy 10% ATK của đối thủ trong 10s.</td><td>Đối thủ −10% ATK, bản thân + (10% ATK gốc của đối thủ).</td></tr>
+  <tr><td>Thần thoại</td><td>Uy áp</td><td>Đối thủ không thể hồi chiêu trong 2s.</td><td>Mọi đồng hồ hồi chiêu của đối thủ đứng yên 2s. AP vẫn hồi.</td></tr>
+</table>
+<h3>6.2 Áp lại cùng một hiệu ứng <span class="badge">ĐỀ XUẤT</span></h3>
+<ul>
+  <li>Áp lại hiệu ứng đang có thì <b>làm mới thời gian</b>, không cộng dồn độ mạnh.</li>
+  <li>Ngoại lệ: Thiêu đốt cộng dồn được nhiều tầng khi mục tiêu đang chịu hiệu ứng từ Ultimate của Tiwo (mục 7.3).</li>
+</ul>
+<h3>6.3 Giảm sát thương và khiên <span class="badge">ĐỀ XUẤT</span></h3>
+<ul>
+  <li>Mọi nguồn giảm sát thương nhận vào (D, D-D, Skill Onea, passive Onea) <b>cộng thẳng</b> với nhau và bị giới hạn tối đa <b>60%</b>. Mỗi lần dùng D/D-D là một lượt riêng có thời gian riêng.</li>
+  <li>Khiên từ A-D và D-H là các lượt riêng, mỗi lượt tồn tại 5s. Tổng khiên tối đa <b>50% HP tối đa</b>; phần vượt quá bị bỏ.</li>
+  <li>Tăng sát thương phải chịu (Bào mòn, Lãnh địa Onea) cộng thẳng với nhau.</li>
+</ul>
+
+<h2 class="pb">7. Hồ sơ Pet</h2>
+<p>Chỉ số của Tiwo lấy từ sheet. Chỉ số của Zeru và Onea là <span class="badge">ĐỀ XUẤT</span> vì sheet chưa có.</p>
+<table>
+  <tr><th>Pet</th><th>Hệ chính</th><th>Vai trò</th><th class="num">HP</th><th class="num">ATK</th><th class="num">DEF</th><th class="num">SPD</th><th class="num">Ultimate</th></tr>
+  <tr><td><b>Zeru</b></td><td>Chọn trước trận</td><td>Linh hoạt / Dồn sát thương</td><td class="num">1 350</td><td class="num">150</td><td class="num">100</td><td class="num">105</td><td class="num">17 E</td></tr>
+  <tr><td><b>Onea</b></td><td>Đất <span class="badge">ĐỀ XUẤT</span></td><td>Đấu sĩ / Liều mạng</td><td class="num">1 500</td><td class="num">140</td><td class="num">110</td><td class="num">95</td><td class="num">15 E</td></tr>
+  <tr><td><b>Tiwo</b></td><td>Lửa</td><td>Sát thủ</td><td class="num">1 280</td><td class="num">165</td><td class="num">88</td><td class="num">115</td><td class="num">9 E (×2)</td></tr>
+</table>
+
+<h3>7.1 Zeru</h3>
+<table>
+  <tr><th style="width:17%">Loại</th><th>Mô tả</th></tr>
+  <tr><td><b>Passive</b></td><td>Trước trận, Zeru được chọn một trong 8 hệ làm hệ chính. Không đổi hệ trong trận.</td></tr>
+  <tr><td><b>Skill</b> (A-D-H)</td><td>Cường hóa bản thân trong 6s và tạo một vòng năng lượng trên đầu. Trong thời gian cường hóa:
+    <ul><li>Hành động <b>A</b> và <b>A-A</b> giảm 50% thời gian hồi.</li>
+    <li>Mỗi đòn đánh ghi lại 40% sát thương gây ra vào vòng năng lượng. Tổng ghi lại tối đa 200% ATK.</li></ul>
+    Lượng đã ghi được giữ cho tới khi Ultimate dùng đến, kể cả khi cường hóa đã hết. <span class="badge">ĐỀ XUẤT</span></td></tr>
+  <tr><td><b>Ultimate</b> (17 E)</td><td>Phóng vòng năng lượng vào kẻ địch, gây sát thương bằng 50% ATK + 75% lượng đã ghi lại, sau đó xóa lượng ghi lại. Lần dùng Skill kế tiếp được giảm thêm 25% hồi chiêu, tức A và A-A giảm tổng cộng 75%. Hiệu ứng thêm này dùng một lần cho mỗi lần dùng Ultimate.</td></tr>
+</table>
+
+<h3>7.2 Onea</h3>
+<table>
+  <tr><th style="width:17%">Loại</th><th>Mô tả</th></tr>
+  <tr><td><b>Passive</b></td><td>Cứ mất 3% HP tối đa thì +1.5% sát thương gây ra (tối đa khoảng +50%). Khi HP ≤ 30%, nhận 30% giảm sát thương (tính chung giới hạn 60%).</td></tr>
+  <tr><td><b>Skill</b> (A-D-H)</td><td>Tụ lực vào cánh tay trong 3s. Trong lúc tụ lực, Onea nhận 30% giảm sát thương nhưng không dùng được orb. Hết 3s thì gây sát thương 150% ATK.<br><span class="small">Bổ sung: nếu bị choáng trong lúc tụ lực, đòn đánh bị hủy và Skill vẫn tính hồi chiêu. <span class="badge">ĐỀ XUẤT</span></span></td></tr>
+  <tr><td><b>Ultimate</b> (15 E)</td><td>Tạo lãnh địa tồn tại 5s, bán kính 2.5 m quanh vị trí dùng chiêu <span class="badge">ĐỀ XUẤT</span>. Kẻ địch trong lãnh địa chịu thêm 20% sát thương. Onea đứng trong lãnh địa được +20% ATK, và Skill giảm 50% thời gian hồi.</td></tr>
+</table>
+
+<h3>7.3 Tiwo</h3>
+<table>
+  <tr><th style="width:17%">Loại</th><th>Mô tả</th></tr>
+  <tr><td><b>Passive</b></td><td>Khi đánh kẻ địch đang bị Thiêu đốt: +20% sát thương gây ra, và đòn đánh bỏ qua 30% DEF của mục tiêu.</td></tr>
+  <tr><td><b>Skill</b> (A-D-H) – Hỏa Hồn Bộc Phát</td><td>Nếu mục tiêu chưa bị Thiêu đốt: gây Thiêu đốt.<br>Nếu mục tiêu đang bị Thiêu đốt: xóa Thiêu đốt và gây ngay toàn bộ sát thương thiêu đốt còn lại = 3% HP tối đa × số giây còn lại × số tầng (sát thương chuẩn, được +20% từ Passive).</td></tr>
+  <tr><td><b>Ultimate</b> (9 E, tích trữ 2 lần) – Hỏa Long Nộ Diệt</td><td>Cho phép Thiêu đốt trên kẻ địch cộng dồn tối đa 3 tầng cho tới khi kẻ địch hết Thiêu đốt, sau đó gây 1 tầng Thiêu đốt. Mỗi lần gây Thiêu đốt thêm (từ A-A, Skill, Ultimate) thì +1 tầng và làm mới thời gian 5s. Energy của Tiwo tối đa 18 để tích trữ được 2 lần Ultimate.</td></tr>
+</table>
+<div class="box"><b>Combo mẫu của Tiwo:</b> Ultimate (1 tầng) → A-A (2 tầng) → Ultimate lần 2 (3 tầng) → đánh A / A-D với +20% sát thương và xuyên 30% DEF → Skill kích nổ toàn bộ số giây cháy còn lại × 3 tầng.</div>
+
+<h2 class="pb">8. Tham số cân bằng cần playtest</h2>
+<table>
+  <tr><th>Tham số</th><th class="num">Giá trị hiện tại</th><th>Rủi ro cần theo dõi</th></tr>
+  <tr><td>Hằng số K trong công thức DEF</td><td class="num">300</td><td>Tăng K thì DEF ít ảnh hưởng hơn và trận đấu ngắn lại.</td></tr>
+  <tr><td>Giới hạn giảm sát thương</td><td class="num">60%</td><td>Onea máu thấp cộng D-D có thể gần như bất tử.</td></tr>
+  <tr><td>Giới hạn khiên</td><td class="num">50% HP</td><td>Dùng liên tục A-D và D-H.</td></tr>
+  <tr><td>Choáng / miễn choáng</td><td class="num">3s / 5s</td><td>Choáng 3s trên hồi chiêu 5s vẫn rất mạnh.</td></tr>
+  <tr><td>Thiêu đốt 3 tầng</td><td class="num">9% HP/s</td><td>Kích nổ lúc 3 tầng, còn 5s cháy = 45% HP tối đa trong một đòn.</td></tr>
+  <tr><td>Energy của Tiwo</td><td class="num">9 E ×2</td><td>Rẻ nhất trong 3 pet, cần so sánh với 17 E của Zeru.</td></tr>
+  <tr><td>Chỉ số Zeru / Onea</td><td class="num">Mục 7</td><td>Đề xuất ban đầu, chưa được kiểm chứng.</td></tr>
+</table>
+
+<h2>9. Nhật ký mâu thuẫn và cách xử lý</h2>
+<p><b>Nguyên tắc:</b> các tab gốc (Combat, Zeru, Onea, Tiwo, Type) là nguồn chuẩn. Những gì tab "Cơ chế chiến đấu" tự thêm vào thì bị bỏ, hoặc chuyển xuống Phụ lục nếu không ảnh hưởng tới gameplay.</p>
+<table>
+  <tr><th style="width:4%">#</th><th style="width:34%">Vấn đề trong sheet</th><th>Cách xử lý trong GDD</th></tr>
+  <tr><td>1</td><td>Ultimate Tiwo ở tab tổng hợp có thêm "gây 180% ATK diện rộng lên toàn bộ kẻ địch", tab gốc không có.</td><td>Bỏ phần 180% ATK và diện rộng; giữ mô tả của tab gốc.</td></tr>
+  <tr><td>2</td><td>Tab tổng hợp gán tên "Hỏa Cầu Nhanh" cho orb A kèm Thiêu đốt, trong khi orb A là hành động chung, không có hiệu ứng hệ.</td><td>Orb A của mọi pet giống nhau. Tên "Hỏa Hồn Bộc Phát" dùng cho Skill, "Hỏa Long Nộ Diệt" dùng cho Ultimate.</td></tr>
+  <tr><td>3</td><td>Mục "Skill 3" ở tab tổng hợp trộn Skill (kích nổ) với Passive (+20%, xuyên 30% DEF).</td><td>Tách thành Skill và Passive riêng (mục 7.3).</td></tr>
+  <tr><td>4</td><td>"Skill 2 – Hỏa Giáp Xung Kích" chính là combo A-D chung, có thêm "khiên 4s".</td><td>Bỏ; A-D là hành động chung, khiên thống nhất tồn tại 5s.</td></tr>
+  <tr><td>5</td><td>Bảng cân bằng ghi Net = 0.00 cho Thường và Thần thoại, dù số hệ khắc và bị kháng khác nhau.</td><td>Sửa thành Thường −1, Thần thoại +1 (mục 5).</td></tr>
+  <tr><td>6</td><td>Định dạng số không đồng nhất ("1,00x" lẫn với "1.25").</td><td>Thống nhất dùng dấu chấm thập phân.</td></tr>
+  <tr><td>7</td><td>Chưa có công thức DEF và thứ tự áp dụng các hệ số.</td><td>Thêm công thức ở mục 4.</td></tr>
+  <tr><td>8</td><td>"Thời gian hồi là thời gian chờ các orb" không rõ tính theo orb hay theo hành động. Nếu khóa theo orb thì A-D-H sẽ khóa cả 3 orb trong 10s.</td><td>Hồi chiêu tính theo từng hành động (mục 2).</td></tr>
+  <tr><td>9</td><td>Chưa có quy tắc cộng dồn giảm sát thương và khiên.</td><td>Cộng thẳng, giới hạn 60% / 50% HP (mục 6.3).</td></tr>
+  <tr><td>10</td><td>"50% lượng dmg" ở A-D và A-H không rõ tính trước hay sau các hệ số.</td><td>Tính sau mọi hệ số (mục 3).</td></tr>
+  <tr><td>11</td><td>Zeru và Onea không có chỉ số, Onea không có hệ.</td><td>Thêm chỉ số đề xuất; Onea đề xuất hệ Đất.</td></tr>
+  <tr><td>12</td><td>Cơ chế tầng Thiêu đốt của Tiwo và cách tính "tổng sát thương thiêu đốt" chưa rõ.</td><td>Định nghĩa theo số giây còn lại × số tầng (mục 7.3).</td></tr>
+  <tr><td>13</td><td>Zeru "ghi lại sát thương" không rõ chỉ ghi trong lúc cường hóa hay cả trận, và giữ lượng ghi bao lâu.</td><td>Chỉ ghi trong lúc cường hóa; giữ tới khi Ultimate dùng đến (mục 7.1).</td></tr>
+  <tr><td>14</td><td>Choáng 3s trên hồi chiêu 5s có thể khóa đối thủ liên tục.</td><td>Thêm miễn choáng 5s sau khi hết choáng.</td></tr>
+  <tr><td>15</td><td>Tab tổng hợp có các chỉ số tỉ lệ bắt, kháng bắt, "Burst 210%", "Hồi chiêu TB 4.2s", "Bậc 3" nhưng không có hệ thống nào dùng tới.</td><td>Bỏ khỏi combat; tỉ lệ bắt chuyển xuống Phụ lục. Thuật ngữ "Z-Move" (của Pokémon) được bỏ.</td></tr>
+</table>
+
+<h2 class="pb">10. Phụ lục: nội dung ngoài phạm vi combat (Tiwo)</h2>
+<p class="small">Giữ lại từ tab tổng hợp để tham khảo cho art và nội dung. Chưa có hệ thống gameplay nào dùng các mục này.</p>
+<table>
+  <tr><th style="width:30%">Mục</th><th>Giá trị</th></tr>
+  <tr><td>Mã định danh</td><td>#PET-001</td></tr>
+  <tr><td>Độ hiếm</td><td>Hiếm</td></tr>
+  <tr><td>Tầm đánh / Tốc độ ra đòn</td><td>Cận chiến 1.8 m / 1.25 đòn/s (chưa dùng trong hệ orb)</td></tr>
+  <tr><td>Kiểu di chuyển</td><td>Đi bộ</td></tr>
+  <tr><td>Cân nặng / Kích thước</td><td>22.0 kg / cao 0.85 m, rộng 0.60 m</td></tr>
+  <tr><td>Tỉ lệ bắt / Kháng bắt</td><td>22.5% / 35.0% (chờ hệ thống bắt pet)</td></tr>
+  <tr><td>Model 3D</td><td>PET_TIWO_HERO_V2.fbx · Scale 1.0x</td></tr>
+  <tr><td>Khung xương</td><td>Quadruped · 48 bones · 60 FPS</td></tr>
+  <tr><td>Màu chủ đạo / phụ</td><td>Đỏ Hỏa Ngục #D32F2F / Vàng Hổ Phách #FFA000</td></tr>
+  <tr><td>VFX</td><td>Ngọn lửa cuộn quanh móng vuốt; vết cháy trên mặt đất khi bước</td></tr>
+  <tr><td>SFX</td><td>Tiếng gầm lửa nổ lách tách, trầm</td></tr>
+  <tr><td>Idle anim</td><td>Gầm, thở ra tia lửa, đập đuôi lửa</td></tr>
+  <tr><td>Môi trường sống</td><td>Vùng núi lửa và sa mạc đá</td></tr>
+  <tr><td>Lore</td><td>Sinh vật mang nguyên tố Lửa thuần khiết, sống quanh miệng núi lửa cổ. Lớp vảy đá giúp chịu nhiệt; ngọn lửa vĩnh cửu cháy trên đỉnh đầu và chóp đuôi. Nhanh nhẹn, hung hãn khi bị xâm phạm lãnh thổ nhưng trung thành tuyệt đối với người huấn luyện.</td></tr>
+  <tr><td>Chiến thuật</td><td>Sát thủ dứt điểm mục tiêu thấp máu bằng kích nổ thiêu đốt. Khắc Cây và Băng; bị Nước và Đất kháng. Nên đi cùng pet có khống chế.</td></tr>
+</table>
+
+</body>
+</html>

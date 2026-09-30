@@ -1,0 +1,41 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a0d179ac4e0c5094abaeceb3b2e26a90, type: 3}
+  m_Name: Pet_Onea
+  m_EditorClassIdentifier: 
+  petId: PET-003
+  displayName: Onea
+  primaryElement: 5
+  secondaryElement: 255
+  canChooseElement: 0
+  maxHp: 1500
+  attack: 140
+  defense: 110
+  speed: 95
+  moveSpeed: 0.7
+  attackRange: 1.2
+  attacksPerSecond: 0.9
+  basicAttackRatio: 0.2
+  bodyRadius: 0.4
+  bodyHeight: 0.75
+  ultimateEnergyCost: 15
+  ultimateMaxCharges: 1
+  modelPrefab: {fileID: 919132149155446097, guid: 1311ca27db541b04cbd94c9df139bd11, type: 3}
+  animatorController: {fileID: 9100000, guid: 78a9dc793aedd34499fce641c8be1e39, type: 2}
+  modelYawOffset: 1.4773726
+  modelScale: 1
+  overrideMaterial: {fileID: 0}
+  icon: {fileID: 0}
+  skillVfxPrefab: {fileID: 0}
+  ultimateVfxPrefab: {fileID: 0}
+  skillSfx: {fileID: 0}
+  ultimateSfx: {fileID: 0}

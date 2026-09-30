@@ -19,9 +19,9 @@ public sealed class PerformanceMonitorPanel : MonoBehaviour
     [SerializeField] private TMP_Text objectStateText;
     [SerializeField] private CanvasGroup panelCanvasGroup;
 
-    [Header("Object State Debug")]
-    [SerializeField] private PocketControl movementController;
-    [SerializeField] private CompanionCombatController combatController;
+    [Header("Summon Battle State")]
+    [SerializeField] private XR124.Combat.BattleSummoner summoner;
+    [SerializeField] private XR124.Combat.SealComboCaster sealCaster;
 
     [Header("Sampling")]
     [SerializeField, Min(0.1f)] private float refreshInterval = 0.25f;
@@ -72,8 +72,16 @@ public sealed class PerformanceMonitorPanel : MonoBehaviour
         systemMemoryRecorder = ProfilerRecorder.StartNew(ProfilerCategory.Memory, "System Used Memory");
         gcMemoryRecorder = ProfilerRecorder.StartNew(ProfilerCategory.Memory, "GC Reserved Memory");
         panelCanvasGroup ??= GetComponent<CanvasGroup>();
-        movementController ??= FindFirstObjectByType<PocketControl>();
-        combatController ??= FindFirstObjectByType<CompanionCombatController>();
+        // Tìm hệ triệu hồi một lần lúc khởi tạo; không dò lại cả scene theo chu kỳ để tránh tốn CPU trên Quest.
+        if (summoner == null)
+        {
+            summoner = FindFirstObjectByType<XR124.Combat.BattleSummoner>();
+        }
+
+        if (sealCaster == null)
+        {
+            sealCaster = FindFirstObjectByType<XR124.Combat.SealComboCaster>();
+        }
         FindLeftHandSkeleton();
         SetPanelVisible(false);
     }
@@ -406,27 +414,37 @@ public sealed class PerformanceMonitorPanel : MonoBehaviour
     }
 
     /// <summary>
-    /// Đưa state di chuyển và combat của vật thể lên UI để chẩn đoán trực tiếp trên kính.
+    /// Hiện trạng thái trận triệu hồi trên bảng lòng bàn tay trái: giai đoạn triệu hồi, HP/AP/Energy của pet người chơi,
+    /// HP địch, chuỗi ấn đang kết và kết quả lệnh gần nhất. Chỉ dùng ASCII vì font TMP có thể thiếu dấu tiếng Việt.
     /// </summary>
     private void RefreshObjectState()
     {
-        if (movementController == null)
+        if (summoner == null)
         {
-            movementController = FindFirstObjectByType<PocketControl>();
+            SetText(objectStateText, "SUMMON  BattleSummoner not found");
+            return;
         }
 
-        if (combatController == null)
+        XR124.Combat.PetCombatant player = summoner.PlayerPet;
+        XR124.Combat.PetCombatant enemy = summoner.EnemyPet;
+        string state = $"SUMMON  {summoner.State}";
+
+        // Chỉ hiện chỉ số khi đang/đã đánh; trước đó pet còn ẩn và chưa có số liệu trận.
+        if (player != null && (player.IsInMatch || summoner.State == XR124.Combat.BattleSummoner.SummonState.Finished))
         {
-            combatController = FindFirstObjectByType<CompanionCombatController>();
+            state += $"\nYOU  HP {player.CurrentHp:0}/{player.MaxHp:0}  AP {player.CurrentAP}/{player.MaxAP}  E {player.CurrentEnergy}/{player.UltimateCost}";
+            if (enemy != null)
+            {
+                state += $"\nFOE  HP {enemy.CurrentHp:0}/{enemy.MaxHp:0}";
+            }
         }
 
-        string movementState = movementController != null
-            ? movementController.GetRuntimeDebugText()
-            : "MOVE  PocketControl not found";
-        string combatState = combatController != null
-            ? combatController.GetRuntimeDebugText()
-            : "COMBAT  CompanionCombatController not found";
-        SetText(objectStateText, movementState + "\n" + combatState);
+        if (sealCaster != null)
+        {
+            state += $"\nSEAL  {sealCaster.PendingSequence}  |  {sealCaster.LastResult}";
+        }
+
+        SetText(objectStateText, state);
     }
 
     /// <summary>

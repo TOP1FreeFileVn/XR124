@@ -1,0 +1,167 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 53a1f815f90dad2449ec9968cfb62152, type: 3}
+  m_Name: CombatRules
+  m_EditorClassIdentifier: 
+  maxAP: 20
+  apRegenInterval: 2
+  cooldownReductionCap: 0.75
+  defenseConstant: 300
+  damageReductionCap: 0.6
+  shieldDuration: 5
+  shieldCapMaxHpRatio: 0.5
+  burnMaxHpPerSecond: 0.03
+  burnDuration: 5
+  growthAttackUp: 0.15
+  growthDuration: 10
+  erosionDamageTakenUp: 0.1
+  erosionDuration: 10
+  sandstormDefenseDown: 0.15
+  sandstormDuration: 10
+  frostbiteSlow: 0.1
+  frostbiteDuration: 5
+  stunDuration: 3
+  stunImmunityDuration: 5
+  balanceAttackSteal: 0.1
+  balanceDuration: 10
+  suppressDuration: 2
+  actions:
+  - type: 0
+    apCost: 1
+    cooldown: 3
+    attackRatio: 0.5
+    shieldFromDamageRatio: 0
+    lifestealRatio: 0
+    appliesElementEffect: 0
+    damageReduction: 0
+    damageReductionDuration: 0
+    healMaxHpRatio: 0
+    shieldMaxHpRatio: 0
+    apRestore: 0
+    triggersSkill: 0
+  - type: 1
+    apCost: 1
+    cooldown: 3
+    attackRatio: 0
+    shieldFromDamageRatio: 0
+    lifestealRatio: 0
+    appliesElementEffect: 0
+    damageReduction: 0.1
+    damageReductionDuration: 1.5
+    healMaxHpRatio: 0
+    shieldMaxHpRatio: 0
+    apRestore: 0
+    triggersSkill: 0
+  - type: 2
+    apCost: 1
+    cooldown: 3
+    attackRatio: 0
+    shieldFromDamageRatio: 0
+    lifestealRatio: 0
+    appliesElementEffect: 0
+    damageReduction: 0
+    damageReductionDuration: 0
+    healMaxHpRatio: 0.15
+    shieldMaxHpRatio: 0
+    apRestore: 0
+    triggersSkill: 0
+  - type: 3
+    apCost: 4
+    cooldown: 5
+    attackRatio: 0.75
+    shieldFromDamageRatio: 0.5
+    lifestealRatio: 0
+    appliesElementEffect: 0
+    damageReduction: 0
+    damageReductionDuration: 0
+    healMaxHpRatio: 0
+    shieldMaxHpRatio: 0
+    apRestore: 0
+    triggersSkill: 0
+  - type: 4
+    apCost: 4
+    cooldown: 5
+    attackRatio: 0.75
+    shieldFromDamageRatio: 0
+    lifestealRatio: 0.5
+    appliesElementEffect: 0
+    damageReduction: 0
+    damageReductionDuration: 0
+    healMaxHpRatio: 0
+    shieldMaxHpRatio: 0
+    apRestore: 0
+    triggersSkill: 0
+  - type: 5
+    apCost: 4
+    cooldown: 5
+    attackRatio: 0
+    shieldFromDamageRatio: 0
+    lifestealRatio: 0
+    appliesElementEffect: 0
+    damageReduction: 0
+    damageReductionDuration: 0
+    healMaxHpRatio: 0
+    shieldMaxHpRatio: 0.25
+    apRestore: 0
+    triggersSkill: 0
+  - type: 6
+    apCost: 4
+    cooldown: 5
+    attackRatio: 1
+    shieldFromDamageRatio: 0
+    lifestealRatio: 0
+    appliesElementEffect: 1
+    damageReduction: 0
+    damageReductionDuration: 0
+    healMaxHpRatio: 0
+    shieldMaxHpRatio: 0
+    apRestore: 0
+    triggersSkill: 0
+  - type: 7
+    apCost: 4
+    cooldown: 5
+    attackRatio: 0
+    shieldFromDamageRatio: 0
+    lifestealRatio: 0
+    appliesElementEffect: 0
+    damageReduction: 0.25
+    damageReductionDuration: 2
+    healMaxHpRatio: 0
+    shieldMaxHpRatio: 0
+    apRestore: 0
+    triggersSkill: 0
+  - type: 8
+    apCost: 4
+    cooldown: 5
+    attackRatio: 0
+    shieldFromDamageRatio: 0
+    lifestealRatio: 0
+    appliesElementEffect: 0
+    damageReduction: 0
+    damageReductionDuration: 0
+    healMaxHpRatio: 0.25
+    shieldMaxHpRatio: 0
+    apRestore: 2
+    triggersSkill: 0
+  - type: 9
+    apCost: 9
+    cooldown: 10
+    attackRatio: 0
+    shieldFromDamageRatio: 0
+    lifestealRatio: 0
+    appliesElementEffect: 0
+    damageReduction: 0
+    damageReductionDuration: 0
+    healMaxHpRatio: 0
+    shieldMaxHpRatio: 0
+    apRestore: 0
+    triggersSkill: 1

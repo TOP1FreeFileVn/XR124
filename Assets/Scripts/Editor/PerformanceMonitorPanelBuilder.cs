@@ -47,10 +47,11 @@ public static class PerformanceMonitorPanelBuilder
         SerializedObject monitorObject = new SerializedObject(monitor);
         monitorObject.FindProperty("panelCanvasGroup").objectReferenceValue = canvasGroup;
         monitorObject.FindProperty("leftHandSkeleton").objectReferenceValue = FindLeftHandSkeleton();
-        monitorObject.FindProperty("movementController").objectReferenceValue =
-            Object.FindFirstObjectByType<PocketControl>();
-        monitorObject.FindProperty("combatController").objectReferenceValue =
-            Object.FindFirstObjectByType<CompanionCombatController>();
+        // Bảng hiện trạng thái trận triệu hồi (BattleSummoner + SealComboCaster).
+        monitorObject.FindProperty("summoner").objectReferenceValue =
+            Object.FindFirstObjectByType<XR124.Combat.BattleSummoner>();
+        monitorObject.FindProperty("sealCaster").objectReferenceValue =
+            Object.FindFirstObjectByType<XR124.Combat.SealComboCaster>();
 
         Button resetButton = CreateButton("Reset Game Button", root.transform, "RESET GAME",
             new Vector2(1f, 1f), new Vector2(1f, 1f), new Vector2(-148f, -45f), new Vector2(-14f, -9f));
