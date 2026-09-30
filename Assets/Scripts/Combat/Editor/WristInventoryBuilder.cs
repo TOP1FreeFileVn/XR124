@@ -110,13 +110,14 @@ namespace XR124.Combat.EditorTools
             return material;
         }
 
-        // Bảng túi đồ 380×240 (scale 0.001 → rộng 0.38 m): tiêu đề, ô Katana (icon, tên, trạng thái, nút) và 3 ô trống.
+        // Bảng túi đồ 440×300 (scale 0.001 → rộng 0.44 m): tiêu đề, ô Katana (icon, tên, trạng thái) với nút lớn ~16×6 cm
+        // để dễ bấm bằng tia hoặc chạm đầu ngón, và 3 ô trống nhỏ bên phải.
         private static GameObject CreatePanel(Transform parent, out TMP_Text status, out TMP_Text buttonLabel, out Button button)
         {
             GameObject panel = new GameObject("Panel", typeof(RectTransform));
             RectTransform rect = (RectTransform)panel.transform;
             rect.SetParent(parent, false);
-            rect.sizeDelta = new Vector2(380f, 240f);
+            rect.sizeDelta = new Vector2(440f, 300f);
             rect.localScale = Vector3.one * 0.001f;
             Canvas canvas = panel.AddComponent<Canvas>();
             canvas.renderMode = RenderMode.WorldSpace;
@@ -125,24 +126,24 @@ namespace XR124.Combat.EditorTools
             panel.AddComponent<GraphicRaycaster>();
             AddRayInteraction(panel, canvas);
 
-            Image background = CreateImage("Background", rect, PanelColor, Vector2.zero, new Vector2(380f, 240f));
+            Image background = CreateImage("Background", rect, PanelColor, Vector2.zero, new Vector2(440f, 300f));
             background.raycastTarget = true;
-            CreateText("Title", rect, "INVENTORY", new Vector2(0f, 96f), new Vector2(340f, 36f), 26f, TextAlignmentOptions.Midline, Color.white);
+            CreateText("Title", rect, "INVENTORY", new Vector2(0f, 124f), new Vector2(400f, 40f), 28f, TextAlignmentOptions.Midline, Color.white);
 
             // Ô Katana.
-            Image slot = CreateImage("Slot_Katana", rect, SlotColor, new Vector2(-126f, 10f), new Vector2(96f, 96f));
-            Image icon = CreateImage("Icon", slot.rectTransform, Color.white, Vector2.zero, new Vector2(88f, 88f));
+            Image slot = CreateImage("Slot_Katana", rect, SlotColor, new Vector2(-110f, 36f), new Vector2(120f, 120f));
+            Image icon = CreateImage("Icon", slot.rectTransform, Color.white, Vector2.zero, new Vector2(110f, 110f));
             icon.sprite = EnsureIconSprite();
             icon.preserveAspect = true;
-            CreateText("Name", rect, "Katana", new Vector2(-126f, -52f), new Vector2(110f, 24f), 20f, TextAlignmentOptions.Midline, Color.white);
-            status = CreateText("Status", rect, "In bag", new Vector2(-126f, -74f), new Vector2(110f, 20f), 16f, TextAlignmentOptions.Midline, new Color(0.7f, 0.78f, 0.9f));
+            CreateText("Name", rect, "Katana", new Vector2(-110f, -40f), new Vector2(160f, 26f), 22f, TextAlignmentOptions.Midline, Color.white);
+            status = CreateText("Status", rect, "In bag", new Vector2(-110f, -64f), new Vector2(160f, 22f), 18f, TextAlignmentOptions.Midline, new Color(0.7f, 0.78f, 0.9f));
 
-            button = CreateButton(rect, new Vector2(-126f, -102f), new Vector2(100f, 30f), out buttonLabel);
+            button = CreateButton(rect, new Vector2(-110f, -112f), new Vector2(160f, 60f), out buttonLabel);
 
             // 3 ô trống cho vật phẩm sau này.
             for (int i = 0; i < 3; i++)
             {
-                CreateImage($"Slot_Empty_{i + 1}", rect, new Color(SlotColor.r, SlotColor.g, SlotColor.b, 0.55f), new Vector2(-10f + i * 112f, 10f), new Vector2(96f, 96f));
+                CreateImage($"Slot_Empty_{i + 1}", rect, new Color(SlotColor.r, SlotColor.g, SlotColor.b, 0.55f), new Vector2(40f + i * 80f, 36f), new Vector2(70f, 70f));
             }
 
             panel.SetActive(false);
@@ -186,10 +187,12 @@ namespace XR124.Combat.EditorTools
                 AssetDatabase.CopyAsset(IconSource, IconPath);
             }
 
+            // Phải là Sprite dạng Single: chế độ Multiple mà không cắt ô thì không sinh sprite nào và ô icon hiện trắng.
             TextureImporter importer = (TextureImporter)AssetImporter.GetAtPath(IconPath);
-            if (importer != null && importer.textureType != TextureImporterType.Sprite)
+            if (importer != null && (importer.textureType != TextureImporterType.Sprite || importer.spriteImportMode != SpriteImportMode.Single))
             {
                 importer.textureType = TextureImporterType.Sprite;
+                importer.spriteImportMode = SpriteImportMode.Single;
                 importer.maxTextureSize = 256;
                 importer.SaveAndReimport();
             }
@@ -235,7 +238,7 @@ namespace XR124.Combat.EditorTools
             image.raycastTarget = true;
             Button button = image.gameObject.AddComponent<Button>();
             button.targetGraphic = image;
-            label = CreateText("Label", image.rectTransform, "EQUIP", Vector2.zero, size, 18f, TextAlignmentOptions.Midline, Color.white);
+            label = CreateText("Label", image.rectTransform, "EQUIP", Vector2.zero, size, 28f, TextAlignmentOptions.Midline, Color.white);
             label.fontStyle = FontStyles.Bold;
             return button;
         }

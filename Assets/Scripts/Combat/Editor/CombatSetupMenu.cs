@@ -282,6 +282,44 @@ namespace XR124.Combat.EditorTools
                       "Cần cho phép Body Tracking trên kính; trong XR Simulator phần thân trên sẽ cử động.");
         }
 
+        private const string SealAuraShader = "XR124/SealAura";
+        private const string SealAuraMaterialPath = "Assets/Art/VFX/SealAura.mat";
+
+        // Thêm hiệu ứng tỏa ra khi kết ấn (shader HLSL XR124/SealAura): tạo material nếu chưa có và gắn SealVfx vào scene,
+        // nối với SealComboCaster để mỗi ấn A/D/H và Ultimate bật đúng kiểu hiệu ứng.
+        [MenuItem("XR124/Combat/Add Seal VFX (HLSL)", priority = 108)]
+        public static void AddSealVfx()
+        {
+            Material material = AssetDatabase.LoadAssetAtPath<Material>(SealAuraMaterialPath);
+            if (material == null)
+            {
+                Shader shader = Shader.Find(SealAuraShader);
+                if (shader == null)
+                {
+                    Debug.LogError($"[Combat] Không tìm thấy shader {SealAuraShader}; kiểm tra Assets/Art/VFX/SealAura.shader.");
+                    return;
+                }
+
+                material = new Material(shader) { name = "SealAura" };
+                AssetDatabase.CreateAsset(material, SealAuraMaterialPath);
+            }
+
+            SealVfx existing = UnityEngine.Object.FindFirstObjectByType<SealVfx>(FindObjectsInactive.Include);
+            SealVfx vfx = existing;
+            if (vfx == null)
+            {
+                GameObject host = new GameObject("SealVfx");
+                Undo.RegisterCreatedObjectUndo(host, "Add seal VFX");
+                vfx = host.AddComponent<SealVfx>();
+            }
+
+            Undo.RecordObject(vfx, "Configure seal VFX");
+            vfx.Configure(material, UnityEngine.Object.FindFirstObjectByType<SealComboCaster>(FindObjectsInactive.Include));
+            EditorUtility.SetDirty(vfx);
+            EditorSceneManager.MarkSceneDirty(vfx.gameObject.scene);
+            Debug.Log("[Combat] Đã gắn hiệu ứng kết ấn (SealVfx + material SealAura).");
+        }
+
         private const string ArenaModelPath = "Assets/Art/Arena/Arena.fbx";
         // Bán kính vùng đứng được bên trong lan can của model đấu trường (mép sàn 4.95 m).
         private const float ArenaModelWalkRadius = 4.9f;

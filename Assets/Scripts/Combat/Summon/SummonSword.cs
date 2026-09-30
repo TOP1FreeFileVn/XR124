@@ -33,10 +33,11 @@ namespace XR124.Combat
         [Header("Trang bị vào tay")]
         [Tooltip("Điểm bám tay phải; để trống thì tự lấy OVRCameraRig.rightHandAnchor.")]
         [SerializeField] private Transform handAnchor;
-        [Tooltip("Vị trí gốc kiếm trong không gian tay (m): đặt sao cho chuôi (Grip, cao 0.121 m) nằm đúng lòng bàn tay.")]
-        [SerializeField] private Vector3 heldLocalPosition = new Vector3(0f, 0f, 0.121f);
-        [Tooltip("Góc kiếm trong không gian tay: (-90, 0, 0) làm lưỡi (trục -Y của kiếm) chĩa theo hướng tay (+Z).")]
-        [SerializeField] private Vector3 heldLocalEuler = new Vector3(-90f, 0f, 0f);
+        [Tooltip("Vị trí gốc kiếm trong không gian tay (m): đặt sao cho chuôi (Grip, cao 0.121 m) nằm giữa nắm tay.")]
+        [SerializeField] private Vector3 heldLocalPosition = new Vector3(0f, 0.069f, 0.099f);
+        [Tooltip("Góc kiếm trong không gian tay: (-125, 0, 0) cho lưỡi (trục -Y của kiếm) chĩa ra trước và ngóc lên ~35° " +
+                 "như người cầm kiếm thật (−90 là chĩa thẳng theo tay như dao găm).")]
+        [SerializeField] private Vector3 heldLocalEuler = new Vector3(-125f, 0f, 0f);
 
         [Header("Thả / cắm")]
         [Min(0.1f)] [SerializeField] private float returnSpeed = 3f;

@@ -47,9 +47,20 @@ namespace XR124.Combat
             public float weight;
         }
 
+        [Header("Cầm kiếm")]
+        [Tooltip("Kiếm triệu hồi; để trống thì tự tìm. Khi kiếm đang trong tay, bàn tay phải nắm quanh chuôi.")]
+        [SerializeField] private SummonSword sword;
+        [Min(0.01f)] [SerializeField] private float gripBlendSeconds = 0.15f;
+        [Tooltip("Khoảng từ đường khớp gốc ngón tới trục chuôi theo pháp tuyến lòng bàn tay (m) – chuôi áp sát lòng bàn tay.")]
+        [Min(0f)] [SerializeField] private float gripDepth = 0.015f;
+        [Tooltip("Dời trục chuôi từ đường khớp gốc ngón về phía đầu ngón (m, âm = về phía cổ tay) để chuôi nằm giữa vòng nắm.")]
+        [SerializeField] private float gripForward = -0.005f;
+
         private HandRig left;
         private HandRig right;
         private Transform head;
+        private Transform swordGrip;
+        private float gripWeight;
 
         // Tìm xương hai tay, camera và nối sự kiện kết ấn / Ultimate.
         private void Start()
@@ -60,6 +71,8 @@ namespace XR124.Combat
             head = rig != null ? rig.centerEyeAnchor : (Camera.main != null ? Camera.main.transform : null);
             if (caster == null) caster = FindFirstObjectByType<SealComboCaster>();
             if (summoner == null) summoner = FindFirstObjectByType<BattleSummoner>();
+            if (sword == null) sword = FindFirstObjectByType<SummonSword>(FindObjectsInactive.Include);
+            swordGrip = sword != null ? sword.transform.Find("Grip") : null;
             if (caster != null)
             {
                 caster.SealQueued += HandleSeal;
@@ -116,6 +129,92 @@ namespace XR124.Combat
 
             Animate(left);
             Animate(right);
+            AnimateGrip();
+        }
+
+        // Kiếm đang trong tay (và tay phải không đang diễn ấn) → trộn dần tư thế nắm chuôi kiếm; rời tay → nhả dần.
+        private void AnimateGrip()
+        {
+            if (right == null || sword == null || swordGrip == null)
+            {
+                return;
+            }
+
+            bool holding = sword.IsEquipped && sword.gameObject.activeInHierarchy && right.weight <= 0f;
+            gripWeight = Mathf.MoveTowards(gripWeight, holding ? 1f : 0f, Time.deltaTime / gripBlendSeconds);
+            if (gripWeight <= 0f)
+            {
+                return;
+            }
+
+            for (int i = 0; i < right.all.Length; i++)
+            {
+                right.saved[i] = right.all[i].localRotation;
+            }
+
+            GripSword(right);
+
+            for (int i = 0; i < right.all.Length; i++)
+            {
+                right.all[i].localRotation = Quaternion.Slerp(right.saved[i], right.all[i].localRotation, gripWeight);
+            }
+        }
+
+        // Nắm kiếm như người thật: chuôi nằm ngang lòng bàn tay (trục gốc út → gốc trỏ trùng hướng lưỡi, lưỡi ra phía ngón cái),
+        // mu các đốt ngón hướng về phía sống/lưỡi đối diện; IK cánh tay để tâm nắm tay trùng điểm Grip của kiếm (lặp 2 lần
+        // vì IK làm đổi hướng cổ tay), rồi gập 4 ngón và quấn ngón cái quanh chuôi.
+        private void GripSword(HandRig hand)
+        {
+            Vector3 bladeDir = -sword.transform.up;
+            Vector3 fingerDir = Vector3.ProjectOnPlane(-sword.transform.forward, bladeDir);
+            fingerDir = fingerDir.sqrMagnitude > 1e-6f ? fingerDir.normalized : Vector3.ProjectOnPlane(Vector3.down, bladeDir).normalized;
+            Vector3 outward = Vector3.Cross(Vector3.up, Vector3.ProjectOnPlane(head.forward, Vector3.up).normalized);
+
+            for (int iteration = 0; iteration < 2; iteration++)
+            {
+                OrientWristAlongHandle(hand, fingerDir, bladeDir);
+                Vector3 fistOffset = FistCenter(hand) - hand.wrist.position;
+                TwoBoneIk.Solve(hand.upper, hand.lower, hand.wrist, swordGrip.position - fistOffset, (Vector3.down * 0.7f + outward * 0.3f).normalized);
+            }
+
+            OrientWristAlongHandle(hand, fingerDir, bladeDir);
+            // Nắm chặt quanh chuôi (ngón út gập sâu nhất như nắm kiếm thật); ngón cái gập vòng qua chuôi, đè lên ngón trỏ/giữa.
+            CurlFinger(hand, Index, 75f, 95f, 60f);
+            CurlFinger(hand, Middle, 80f, 95f, 60f);
+            CurlFinger(hand, Ring, 90f, 100f, 65f);
+            CurlFinger(hand, Pinky, 95f, 100f, 65f);
+            CurlFinger(hand, Thumb, 40f, 45f, 35f);
+        }
+
+        // Xoay cổ tay: hướng bàn tay (cổ tay → gốc ngón giữa) về fingerDir, rồi vặn quanh trục đó để trục gốc út → gốc trỏ
+        // trùng hướng lưỡi kiếm (chuôi nằm ngang lòng bàn tay, lưỡi đi ra phía ngón trỏ/ngón cái).
+        private void OrientWristAlongHandle(HandRig hand, Vector3 fingerDir, Vector3 bladeDir)
+        {
+            hand.wrist.rotation = Quaternion.FromToRotation(HandForward(hand), fingerDir) * hand.wrist.rotation;
+            Transform index = hand.fingers[Index] != null ? hand.fingers[Index][0] : null;
+            Transform pinky = hand.fingers[Pinky] != null ? hand.fingers[Pinky][0] : null;
+            if (index == null || pinky == null)
+            {
+                return;
+            }
+
+            Vector3 lateral = index.position - pinky.position;
+            float twist = Vector3.SignedAngle(Vector3.ProjectOnPlane(lateral, fingerDir), Vector3.ProjectOnPlane(bladeDir, fingerDir), fingerDir);
+            hand.wrist.rotation = Quaternion.AngleAxis(twist, fingerDir) * hand.wrist.rotation;
+        }
+
+        // Tâm nắm tay (nơi trục chuôi đi qua): giữa gốc ngón trỏ và gốc ngón út, áp vào phía lòng bàn tay gripDepth và dời về
+        // phía đầu ngón gripForward – vùng mà các đốt ngón gập lại sẽ ôm quanh.
+        private Vector3 FistCenter(HandRig hand)
+        {
+            Transform index = hand.fingers[Index] != null ? hand.fingers[Index][0] : null;
+            Transform pinky = hand.fingers[Pinky] != null ? hand.fingers[Pinky][0] : null;
+            if (index == null || pinky == null)
+            {
+                return hand.wrist.position;
+            }
+
+            return (index.position + pinky.position) * 0.5f + PalmNormal(hand) * gripDepth + HandForward(hand) * gripForward;
         }
 
         // Lưu localRotation hiện tại, dựng tư thế ấn trên đó, rồi trộn về theo weight để vào/ra mượt.
@@ -226,6 +325,28 @@ namespace XR124.Combat
             float[] angles = { a0, a1, a2 };
             Vector3 palm = PalmNormal(hand);
             Vector3 previousDir = (chain[0].position - hand.wrist.position).normalized;
+
+            // Trục gập: 4 ngón dài gập quanh trục ngang bàn tay (gốc út → gốc trỏ) – không suy biến kể cả khi đốt trước đã gập
+            // tới 90° và đốt sau song song pháp tuyến lòng bàn tay (lỗi cũ: Cross(đốt, pháp tuyến) = 0 nên đốt sau không gập).
+            // Ngón cái gập chéo lòng bàn tay nên dùng trục vuông góc với đốt đầu và pháp tuyến. Chiều trục chọn một lần ở đốt đầu.
+            Vector3 axis;
+            Transform indexRoot = hand.fingers[Index] != null ? hand.fingers[Index][0] : null;
+            Transform pinkyRoot = hand.fingers[Pinky] != null ? hand.fingers[Pinky][0] : null;
+            if (finger != Thumb && indexRoot != null && pinkyRoot != null)
+            {
+                axis = (indexRoot.position - pinkyRoot.position).normalized;
+            }
+            else
+            {
+                axis = Vector3.Cross(previousDir, palm).normalized;
+            }
+
+            // Đầu ngón phải tiến về phía lòng bàn tay khi xoay dương quanh trục.
+            if (Vector3.Dot(Quaternion.AngleAxis(10f, axis) * previousDir - previousDir, palm) < 0f)
+            {
+                axis = -axis;
+            }
+
             for (int j = 0; j < 3; j++)
             {
                 Transform joint = chain[j];
@@ -237,17 +358,8 @@ namespace XR124.Combat
                 }
 
                 joint.rotation = Quaternion.FromToRotation(segment, previousDir) * joint.rotation;
-                if (angles[j] > 0f)
+                if (angles[j] > 0f && axis.sqrMagnitude > 0.5f)
                 {
-                    segment = child.position - joint.position;
-                    // Trục gập vuông góc với đốt và pháp tuyến lòng bàn tay; chọn chiều sao cho đầu ngón tiến về phía lòng bàn tay.
-                    Vector3 axis = Vector3.Cross(segment, palm).normalized;
-                    Vector3 test = Quaternion.AngleAxis(10f, axis) * segment - segment;
-                    if (Vector3.Dot(test, palm) < 0f)
-                    {
-                        axis = -axis;
-                    }
-
                     joint.rotation = Quaternion.AngleAxis(angles[j], axis) * joint.rotation;
                 }
 
