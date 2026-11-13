@@ -28,9 +28,9 @@ namespace XR124.Combat
         [SerializeField] private SealComboCaster caster;
         [SerializeField] private BattleSummoner summoner;
         [Tooltip("Thời gian giữ tư thế ấn (giây) trước khi nhả về tư thế tracking.")]
-        [Min(0.1f)] [SerializeField] private float holdSeconds = 0.8f;
+        [Min(0.1f)] [SerializeField] private float holdSeconds = 0.4f;
         [Tooltip("Thời gian chuyển vào/ra tư thế (giây).")]
-        [Min(0.01f)] [SerializeField] private float blendSeconds = 0.12f;
+        [Min(0.01f)] [SerializeField] private float blendSeconds = 0.06f;
         [Tooltip("Pháp tuyến lòng bàn tay = dấu × Cross(gốc trỏ − cổ tay, gốc út − cổ tay); đo ở tư thế bind của nhân vật.")]
         [SerializeField] private float leftPalmSign = 1f;
         [SerializeField] private float rightPalmSign = -1f;
@@ -55,11 +55,12 @@ namespace XR124.Combat
         [Min(0f)] [SerializeField] private float gripDepth = 0.015f;
         [Tooltip("Dời trục chuôi từ đường khớp gốc ngón về phía đầu ngón (m, âm = về phía cổ tay) để chuôi nằm giữa vòng nắm.")]
         [SerializeField] private float gripForward = -0.005f;
+        [Tooltip("Khoảng từ gốc kiếm (chắn kiếm) dọc chuôi tới tâm nắm tay (m): tay phải nắm sát dưới chắn kiếm như cầm katana thật.")]
+        [Min(0f)] [SerializeField] private float handleHoldHeight = 0.055f;
 
         private HandRig left;
         private HandRig right;
         private Transform head;
-        private Transform swordGrip;
         private float gripWeight;
 
         // Tìm xương hai tay, camera và nối sự kiện kết ấn / Ultimate.
@@ -72,7 +73,6 @@ namespace XR124.Combat
             if (caster == null) caster = FindFirstObjectByType<SealComboCaster>();
             if (summoner == null) summoner = FindFirstObjectByType<BattleSummoner>();
             if (sword == null) sword = FindFirstObjectByType<SummonSword>(FindObjectsInactive.Include);
-            swordGrip = sword != null ? sword.transform.Find("Grip") : null;
             if (caster != null)
             {
                 caster.SealQueued += HandleSeal;
@@ -133,9 +133,10 @@ namespace XR124.Combat
         }
 
         // Kiếm đang trong tay (và tay phải không đang diễn ấn) → trộn dần tư thế nắm chuôi kiếm; rời tay → nhả dần.
+        // Sau khi tay đã nắm, đặt lại kiếm vào đúng lỗ nắm của bàn tay nhân vật để chuôi nằm gọn trong lòng bàn tay.
         private void AnimateGrip()
         {
-            if (right == null || sword == null || swordGrip == null)
+            if (right == null || sword == null)
             {
                 return;
             }
@@ -158,10 +159,90 @@ namespace XR124.Combat
             {
                 right.all[i].localRotation = Quaternion.Slerp(right.saved[i], right.all[i].localRotation, gripWeight);
             }
+
+            // Chỉ kéo kiếm theo bàn tay khi kiếm còn gắn trong tay (đang nhả dần sau khi cắm thì không được dời kiếm).
+            if (sword.IsEquipped)
+            {
+                SnapSwordIntoFist(right);
+            }
+        }
+
+        // Điểm trên chuôi kiếm mà tâm nắm tay phải ôm lấy: từ gốc kiếm đi ngược hướng lưỡi (trục +Y) một đoạn handleHoldHeight.
+        private Vector3 HoldPoint()
+        {
+            return sword.transform.position + sword.transform.up * handleHoldHeight;
+        }
+
+        // Đặt kiếm vào lỗ nắm của bàn tay nhân vật sau khi ngón đã gập: trục chuôi đi qua tâm lỗ nắm, hướng lưỡi đi từ phía
+        // ngón út sang phía ngón trỏ, sống/lưỡi giữ quy ước cũ (trục forward của kiếm ngược hướng cổ tay → gốc ngón).
+        // SummonSword vẫn đặt kiếm theo anchor tay ở Update (dùng cho phát hiện cắm); bước này chỉ khử phần lệch còn lại
+        // giữa tay nhân vật và kiếm, trộn theo gripWeight để vào/ra mượt.
+        private void SnapSwordIntoFist(HandRig hand)
+        {
+            if (!TryGetFistHole(hand, out Vector3 holeCenter, out Vector3 handleAxis))
+            {
+                return;
+            }
+
+            Vector3 swordUp = -handleAxis;
+            Vector3 swordForward = Vector3.ProjectOnPlane(-HandForward(hand), swordUp);
+            if (swordForward.sqrMagnitude < 1e-6f)
+            {
+                return;
+            }
+
+            Transform swordTransform = sword.transform;
+            Vector3 holdBefore = HoldPoint();
+            Quaternion fistRotation = Quaternion.LookRotation(swordForward.normalized, swordUp);
+            swordTransform.rotation = Quaternion.Slerp(swordTransform.rotation, fistRotation, gripWeight);
+            // Xoay quanh gốc làm điểm cầm dịch đi, nên dời cả kiếm để điểm cầm trùng (theo trọng số) tâm lỗ nắm.
+            Vector3 holdTarget = Vector3.Lerp(holdBefore, holeCenter, gripWeight);
+            swordTransform.position += holdTarget - HoldPoint();
+        }
+
+        // Tâm lỗ nắm: mỗi ngón trỏ/giữa/áp út/út đã gập thành một vòng, trọng tâm 4 khớp (gốc, giữa, cuối, đầu ngón) nằm
+        // trong vòng đó. Tâm lỗ = trung bình các ngón; trục chuôi = trọng tâm ngón út → trọng tâm ngón trỏ (chéo lòng bàn tay
+        // như nắm thật vì khớp gốc ngón út thấp hơn ngón trỏ). Trả về false nếu thiếu xương ngón trỏ/út.
+        private static bool TryGetFistHole(HandRig hand, out Vector3 center, out Vector3 axis)
+        {
+            center = Vector3.zero;
+            axis = Vector3.zero;
+            Vector3 indexHole = Vector3.zero;
+            Vector3 pinkyHole = Vector3.zero;
+            int count = 0;
+            for (int f = Index; f <= Pinky; f++)
+            {
+                Transform[] chain = hand.fingers[f];
+                if (chain == null)
+                {
+                    if (f == Index || f == Pinky)
+                    {
+                        return false;
+                    }
+
+                    continue;
+                }
+
+                Vector3 hole = (chain[0].position + chain[1].position + chain[2].position + chain[3].position) * 0.25f;
+                center += hole;
+                count++;
+                if (f == Index) indexHole = hole;
+                else if (f == Pinky) pinkyHole = hole;
+            }
+
+            axis = indexHole - pinkyHole;
+            if (count == 0 || axis.sqrMagnitude < 1e-6f)
+            {
+                return false;
+            }
+
+            center /= count;
+            axis.Normalize();
+            return true;
         }
 
         // Nắm kiếm như người thật: chuôi nằm ngang lòng bàn tay (trục gốc út → gốc trỏ trùng hướng lưỡi, lưỡi ra phía ngón cái),
-        // mu các đốt ngón hướng về phía sống/lưỡi đối diện; IK cánh tay để tâm nắm tay trùng điểm Grip của kiếm (lặp 2 lần
+        // mu các đốt ngón hướng về phía sống/lưỡi đối diện; IK cánh tay để tâm nắm tay trùng điểm cầm sát chắn kiếm (lặp 2 lần
         // vì IK làm đổi hướng cổ tay), rồi gập 4 ngón và quấn ngón cái quanh chuôi.
         private void GripSword(HandRig hand)
         {
@@ -174,15 +255,16 @@ namespace XR124.Combat
             {
                 OrientWristAlongHandle(hand, fingerDir, bladeDir);
                 Vector3 fistOffset = FistCenter(hand) - hand.wrist.position;
-                TwoBoneIk.Solve(hand.upper, hand.lower, hand.wrist, swordGrip.position - fistOffset, (Vector3.down * 0.7f + outward * 0.3f).normalized);
+                TwoBoneIk.Solve(hand.upper, hand.lower, hand.wrist, HoldPoint() - fistOffset,(Vector3.down * 0.7f + outward * 0.3f).normalized);
             }
 
             OrientWristAlongHandle(hand, fingerDir, bladeDir);
-            // Nắm chặt quanh chuôi (ngón út gập sâu nhất như nắm kiếm thật); ngón cái gập vòng qua chuôi, đè lên ngón trỏ/giữa.
-            CurlFinger(hand, Index, 75f, 95f, 60f);
-            CurlFinger(hand, Middle, 80f, 95f, 60f);
-            CurlFinger(hand, Ring, 90f, 100f, 65f);
-            CurlFinger(hand, Pinky, 95f, 100f, 65f);
+            // Nắm quanh chuôi (ngón út gập sâu nhất như nắm kiếm thật); góc nới hơn nắm đấm kín một chút để lỗ nắm vừa chuôi
+            // katana dày ~3 cm thay vì ngón đâm xuyên chuôi. Ngón cái gập vòng qua chuôi, đè lên ngón trỏ/giữa.
+            CurlFinger(hand, Index, 65f, 85f, 55f);
+            CurlFinger(hand, Middle, 70f, 88f, 55f);
+            CurlFinger(hand, Ring, 78f, 90f, 58f);
+            CurlFinger(hand, Pinky, 85f, 92f, 60f);
             CurlFinger(hand, Thumb, 40f, 45f, 35f);
         }
 

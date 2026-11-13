@@ -13,7 +13,8 @@ namespace XR124.Combat
         [SerializeField] private PetCombatant pet;
 
         [Header("Ghép combo")]
-        [Min(0.1f)] [SerializeField] private float comboWindow = 1f;
+        [Tooltip("Sau ấn cuối cùng chờ bấy nhiêu giây không có ấn mới thì thi triển; ngắn hơn = nhịp game nhanh hơn.")]
+        [Min(0.1f)] [SerializeField] private float comboWindow = 0.6f;
         [Min(0f)] [SerializeField] private float ultimateHoldSeconds = 0.5f;
         [Tooltip("Ultimate = hai tay cùng giữ ấn này (mặc định Kiếm Chỉ A, cả hai đều chỉ vào địch).")]
         [SerializeField] private SealType ultimateSeal = SealType.A;
@@ -43,6 +44,8 @@ namespace XR124.Combat
 
         public string PendingSequence => pendingSequence;
         public string LastResult => lastResult;
+        // Pet đang nhận lệnh từ ấn kí (SealVfx dùng để hiện ấn trên đầu pet).
+        public PetCombatant Pet => pet;
 
         // Gán tay và pet từ công cụ Editor.
         public void Configure(HandSealRecognizer left, HandSealRecognizer right, PetCombatant controlledPet)

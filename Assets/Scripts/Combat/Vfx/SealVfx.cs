@@ -7,6 +7,7 @@ namespace XR124.Combat
     //   D – Thuẫn Chưởng: khiên lục giác trước lòng bàn tay phải, quay theo hướng nhìn.
     //   H – Tâm Ấn: hoa sen trước ngực, quay về phía mắt để thấy được ở góc nhìn thứ nhất.
     //   Ultimate: pháp ấn lớn trước mặt.
+    // Đồng thời ấn kí vừa dùng hiện trên đầu pet của người chơi (quay về camera, bay lên nhẹ) để thấy pet đang nhận lệnh gì.
     // Hiệu ứng bám theo xương tay của nhân vật full body (PlayerBodyAvatar) nếu có, không thì theo anchor tay của OVRCameraRig.
     public sealed class SealVfx : MonoBehaviour
     {
@@ -18,13 +19,21 @@ namespace XR124.Combat
         [SerializeField] private Material auraMaterial;
         [SerializeField] private SealComboCaster caster;
         [Tooltip("Số hiệu ứng có thể hiện cùng lúc.")]
-        [Min(1)] [SerializeField] private int poolSize = 6;
+        [Min(1)] [SerializeField] private int poolSize = 10;
 
         [Header("Thời lượng (giây) và cỡ (m)")]
-        [SerializeField] private Vector2 swordTimeSize = new Vector2(0.9f, 0.45f);
-        [SerializeField] private Vector2 shieldTimeSize = new Vector2(1.2f, 0.7f);
-        [SerializeField] private Vector2 heartTimeSize = new Vector2(1.4f, 0.55f);
-        [SerializeField] private Vector2 ultimateTimeSize = new Vector2(1.6f, 1.3f);
+        [SerializeField] private Vector2 swordTimeSize = new Vector2(0.5f, 0.45f);
+        [SerializeField] private Vector2 shieldTimeSize = new Vector2(0.6f, 0.7f);
+        [SerializeField] private Vector2 heartTimeSize = new Vector2(0.7f, 0.55f);
+        [SerializeField] private Vector2 ultimateTimeSize = new Vector2(0.9f, 1.3f);
+
+        [Header("Ấn kí trên đầu pet")]
+        [SerializeField] private bool showOverPet = true;
+        [SerializeField] private Vector2 overPetTimeSize = new Vector2(0.9f, 0.5f);
+        [Tooltip("Độ cao trên đỉnh thân pet (m, cộng PetDefinition.bodyHeight); cao hơn HUD máu (0.4 m) để không che thanh máu.")]
+        [SerializeField] private float overPetHeight = 0.75f;
+        [Tooltip("Quãng bay lên (m) trong suốt thời gian hiện.")]
+        [SerializeField] private float overPetRise = 0.12f;
 
         private sealed class Effect
         {
@@ -34,6 +43,9 @@ namespace XR124.Combat
             public float age;
             public float duration;
             public float size;
+            // true = hiệu ứng nổi trên đầu pet thay vì bám tay người chơi.
+            public bool overPet;
+            public PetCombatant pet;
         }
 
         private Effect[] pool;
@@ -101,25 +113,38 @@ namespace XR124.Combat
             }
         }
 
-        // Mỗi ấn một kiểu hiệu ứng riêng.
+        // Mỗi ấn một kiểu hiệu ứng riêng ở tay người chơi, kèm ấn kí cùng kiểu trên đầu pet.
         private void HandleSeal(SealType seal)
         {
             switch (seal)
             {
-                case SealType.A: Spawn(Kind.Sword, swordTimeSize); break;
-                case SealType.D: Spawn(Kind.Shield, shieldTimeSize); break;
-                case SealType.H: Spawn(Kind.Heart, heartTimeSize); break;
+                case SealType.A: Spawn(Kind.Sword, swordTimeSize); SpawnOverPet(Kind.Sword); break;
+                case SealType.D: Spawn(Kind.Shield, shieldTimeSize); SpawnOverPet(Kind.Shield); break;
+                case SealType.H: Spawn(Kind.Heart, heartTimeSize); SpawnOverPet(Kind.Heart); break;
             }
         }
 
-        // Ultimate dùng hiệu ứng lớn trước mặt.
+        // Ultimate dùng hiệu ứng lớn trước mặt, kèm pháp ấn Ultimate trên đầu pet.
         private void HandleUltimate(ActionResult result)
         {
             Spawn(Kind.Ultimate, ultimateTimeSize);
+            SpawnOverPet(Kind.Ultimate);
         }
 
-        // Lấy quad rảnh (hoặc quad sắp hết nhất nếu đầy) và bắt đầu hiệu ứng.
-        private void Spawn(Kind kind, Vector2 timeSize)
+        // Hiện ấn kí trên đầu pet đang nhận lệnh (pet của SealComboCaster); bỏ qua nếu tắt tính năng hoặc chưa triệu hồi pet.
+        private void SpawnOverPet(Kind kind)
+        {
+            PetCombatant pet = caster != null ? caster.Pet : null;
+            if (!showOverPet || pet == null || !pet.gameObject.activeInHierarchy)
+            {
+                return;
+            }
+
+            Spawn(kind, overPetTimeSize, pet);
+        }
+
+        // Lấy quad rảnh (hoặc quad sắp hết nhất nếu đầy) và bắt đầu hiệu ứng; overPet khác null thì hiệu ứng nổi trên đầu pet.
+        private void Spawn(Kind kind, Vector2 timeSize, PetCombatant overPet = null)
         {
             if (pool == null || auraMaterial == null)
             {
@@ -145,6 +170,8 @@ namespace XR124.Combat
             chosen.age = 0f;
             chosen.duration = Mathf.Max(0.1f, timeSize.x);
             chosen.size = timeSize.y;
+            chosen.overPet = overPet != null;
+            chosen.pet = overPet;
             chosen.go.SetActive(true);
             Place(chosen);
         }
@@ -167,9 +194,13 @@ namespace XR124.Combat
 
                 effect.age += Time.deltaTime;
                 float progress = effect.age / effect.duration;
-                if (progress >= 1f)
+                // Hết giờ, hoặc pet mang ấn kí đã bị hủy/ẩn (thu hồi, thua) thì tắt hiệu ứng.
+                bool petGone = effect.overPet && (effect.pet == null || !effect.pet.gameObject.activeInHierarchy);
+                if (progress >= 1f || petGone)
                 {
                     effect.go.SetActive(false);
+                    effect.overPet = false;
+                    effect.pet = null;
                     continue;
                 }
 
@@ -192,6 +223,20 @@ namespace XR124.Combat
             forward = forward.sqrMagnitude > 0.0001f ? forward.normalized : Vector3.forward;
             Vector3 position;
             Vector3 normal;
+            if (effect.overPet)
+            {
+                // Trên đầu pet: theo chiều cao thân trong PetDefinition (TransformPoint tính cả scale pet), bay lên dần,
+                // mặt quad quay về mắt người chơi như billboard.
+                float bodyHeight = effect.pet.Definition != null ? effect.pet.Definition.bodyHeight : 0.5f;
+                float rise = overPetRise * Mathf.Clamp01(effect.age / effect.duration);
+                position = effect.pet.transform.TransformPoint(new Vector3(0f, bodyHeight, 0f)) + Vector3.up * (overPetHeight + rise);
+                normal = position - head.position;
+                normal = normal.sqrMagnitude > 0.0001f ? normal.normalized : forward;
+                effect.go.transform.SetPositionAndRotation(position, Quaternion.LookRotation(normal, Vector3.up));
+                effect.go.transform.localScale = Vector3.one * effect.size;
+                return;
+            }
+
             switch (effect.kind)
             {
                 case Kind.Sword:

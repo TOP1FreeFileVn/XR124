@@ -1861,8 +1861,8 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   caster: {fileID: 0}
   summoner: {fileID: 0}
-  holdSeconds: 0.8
-  blendSeconds: 0.12
+  holdSeconds: 0.4
+  blendSeconds: 0.06
   leftPalmSign: 1
   rightPalmSign: -1
   sword: {fileID: 0}
@@ -5344,11 +5344,11 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   auraMaterial: {fileID: 2100000, guid: 1ef37a77b2a525c40bdeeb14efb60eda, type: 2}
   caster: {fileID: 869700063}
-  poolSize: 6
-  swordTimeSize: {x: 0.9, y: 0.45}
-  shieldTimeSize: {x: 1.2, y: 0.7}
-  heartTimeSize: {x: 1.4, y: 0.55}
-  ultimateTimeSize: {x: 1.6, y: 1.3}
+  poolSize: 10
+  swordTimeSize: {x: 0.5, y: 0.45}
+  shieldTimeSize: {x: 0.6, y: 0.7}
+  heartTimeSize: {x: 0.7, y: 0.55}
+  ultimateTimeSize: {x: 0.9, y: 1.3}
 --- !u!4 &587722444
 Transform:
   m_ObjectHideFlags: 0
@@ -8143,7 +8143,7 @@ MonoBehaviour:
   leftHand: {fileID: 12621688}
   rightHand: {fileID: 1289553407}
   pet: {fileID: 1706645767}
-  comboWindow: 1
+  comboWindow: 0.6
   ultimateHoldSeconds: 0.5
   ultimateSeal: 1
   controllerButtons: 1
